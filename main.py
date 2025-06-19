@@ -166,8 +166,7 @@ if __name__ == '__main__':
     # Augmentation parameters
     parser.add_argument('--color-jitter', type=float, default=None, metavar='PCT', help='Color jitter factor (default: 0.3)')
     parser.add_argument('--aa', type=str, default=None, metavar='NAME',
-                        help='Use AutoAugment policy. "v0" or "original". " + \
-                             "(default: rand-m9-mstd0.5-inc1)'),
+                        help='Use AutoAugment policy. "v0" or "original". " +                              "(default: rand-m9-mstd0.5-inc1)'),
     parser.add_argument('--smoothing', type=float, default=0.1, help='Label smoothing (default: 0.1)')
     parser.add_argument('--train-interpolation', type=str, default='bicubic',
                         help='Training interpolation (random, bilinear, bicubic default: "bicubic")')
@@ -228,8 +227,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_cast_loss', action='store_true', default=False, help='if using CAST loss')
     parser.add_argument('--norm_cast', action='store_true', default=False, help='if using normalization in cast')
     
-    parser.add_argument("--data_path", default="/content/drive/MyDrive/P1/dataset_filtered")
-    parser.add_argument("--output_dir", default="/content/drive/MyDrive/P1/output")
+    parser.add_argument("--data_path", default="/kaggle/input/vil-dataset-aug/VIL_Dataset")
+    parser.add_argument("--output_dir", default="/kaggle/working")
 
     #For replay 
     parser.add_argument('--replay_buffer_size', type=int, default=500)

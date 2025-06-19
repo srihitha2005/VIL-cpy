@@ -179,7 +179,7 @@ class Engine():
             same_cluster_vecs = None
         else:
             device = self.device
-            predicted_cluster = self.kmeans.predict(vec.unsqueeze(0).detach().device())[0]
+            predicted_cluster = self.kmeans.predict(vec.unsqueeze(0).detach().cpu())[0]
             same_cluster_vecs = self.adapter_vec_array[self.cluster_assignments == predicted_cluster]
             other_cluster_vecs = self.adapter_vec_array[self.cluster_assignments != predicted_cluster]
             same_cluster_vecs = torch.tensor(same_cluster_vecs,dtype=torch.float32).to(self.device)
@@ -442,13 +442,13 @@ class Engine():
 
         diagonal = np.diag(acc_matrix)
 
-        result_str = "[Average accuracy till task{}]\tAcc@1: {:.4f}\tAcc@5: {:.4f}\tLoss: {:.4f}".format(task_id+1, avg_stat[0], avg_stat[1], avg_stat[2])
+        result_str = "[Average accuracy till task{}]	Acc@1: {:.4f}	Acc@5: {:.4f}	Loss: {:.4f}".format(task_id+1, avg_stat[0], avg_stat[1], avg_stat[2])
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) -
                                 acc_matrix[:, task_id])[:task_id])
             backward = np.mean((acc_matrix[:, task_id] - diagonal)[:task_id])
 
-            result_str += "\tForgetting: {:.4f}\tBackward: {:.4f}".format(forgetting, backward)
+            result_str += "	Forgetting: {:.4f}	Backward: {:.4f}".format(forgetting, backward)
         print(result_str)
         return test_stats
     
@@ -464,7 +464,7 @@ class Engine():
         k = self.args.k
         if len(self.adapter_vec) > k:
             device = self.device
-            self.adapter_vec_array = torch.stack(self.adapter_vec).detach().device().numpy().astype(float)
+            self.adapter_vec_array = torch.stack(self.adapter_vec).detach().cpu().numpy().astype(float)
             self.kmeans = KMeans(n_clusters=k,n_init=10)
             self.kmeans.fit(self.adapter_vec_array)
             self.cluster_assignments = self.kmeans.labels_
@@ -495,8 +495,9 @@ class Engine():
         self.current_class_group = int(min(self.class_mask[task_id])/self.class_group_size)
         self.class_group_list.append(self.current_class_group)
         self.current_classes = self.class_mask[task_id]
-        
-        print(f"\n\nTASK : {task_id}")
+
+        print()
+        print(f"TASK : {task_id}")
         self.added_classes_in_cur_task = set()  
         #! distillation
         if self.class_group_train_count[self.current_class_group]==0:
@@ -620,4 +621,4 @@ class Engine():
 
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
-                    f.write(json.dumps(log_stats) + '\n')
+                    f.write(json.dumps(log_stats) )
