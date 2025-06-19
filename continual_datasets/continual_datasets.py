@@ -677,7 +677,7 @@ class Dataset(torch.utils.data.Dataset):
         self.target_transform = target_transform
         self.mode = 'vil'
         self.classes = 6
-        self.data_path = os.path.join(self.root,'VIL_Dataset', 'train' if self.train else 'test')
+        self.data_path = os.path.join(self.root, 'train' if self.train else 'test')
 
         if not os.path.exists(self.data_path):
             raise RuntimeError(f"{self.data_path} not found. Make sure train/test structure exists.")

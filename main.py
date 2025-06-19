@@ -228,8 +228,8 @@ if __name__ == '__main__':
     parser.add_argument('--use_cast_loss', action='store_true', default=False, help='if using CAST loss')
     parser.add_argument('--norm_cast', action='store_true', default=False, help='if using normalization in cast')
     
-    parser.add_argument("--data_path", default=str(Path.home() / "JKS" / "data.txt"))
-    parser.add_argument("--output_dir", default=str(Path.home() / "JKS" / "output"))
+    parser.add_argument("--data_path", default="/content/drive/MyDrive/P1/dataset_filtered")
+    parser.add_argument("--output_dir", default="/content/drive/MyDrive/P1/output")
 
     #For replay 
     parser.add_argument('--replay_buffer_size', type=int, default=500)
