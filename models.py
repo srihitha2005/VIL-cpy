@@ -53,7 +53,7 @@ def vit_base_patch16_224_biovit(pretrained=True, **kwargs):
 
     # ✅ Manually load your local .pth file here
     checkpoint_path = "biovil_vit_b16_timm.pth"  # Your local path
-    state_dict = torch.load(checkpoint_path, map_location='cpu')
+    state_dict = torch.load(checkpoint_path, map_location=args.device)
     model.load_state_dict(state_dict, strict=False)
 
     return model

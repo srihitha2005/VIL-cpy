@@ -86,6 +86,7 @@ class Engine():
     #changed
     def spectral_regularization(self, model, lambda_spec=1e-3, device='cpu'):
         spec_loss = 0.0
+        device = self.device
         for name, param in model.named_parameters():
             if 'weight' in name and param.ndim >= 2:
                 try:
@@ -177,7 +178,8 @@ class Engine():
             other_cluster_vecs = torch.tensor(other_cluster_vecs,dtype=torch.float32).to(self.device)
             same_cluster_vecs = None
         else:
-            predicted_cluster = self.kmeans.predict(vec.unsqueeze(0).detach().cpu())[0]
+            device = self.device
+            predicted_cluster = self.kmeans.predict(vec.unsqueeze(0).detach().device())[0]
             same_cluster_vecs = self.adapter_vec_array[self.cluster_assignments == predicted_cluster]
             other_cluster_vecs = self.adapter_vec_array[self.cluster_assignments != predicted_cluster]
             same_cluster_vecs = torch.tensor(same_cluster_vecs,dtype=torch.float32).to(self.device)
@@ -320,7 +322,7 @@ class Engine():
             #     k = int(self.replay_top_k_percent * self.buffer_size)
             #     self.replay_buffer = self.replay_buffer[:k]
 
-            # torch.cuda.synchronize()
+            torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
@@ -461,8 +463,8 @@ class Engine():
     def cluster_adapters(self):
         k = self.args.k
         if len(self.adapter_vec) > k:
-              
-            self.adapter_vec_array = torch.stack(self.adapter_vec).detach().cpu().numpy().astype(float)
+            device = self.device
+            self.adapter_vec_array = torch.stack(self.adapter_vec).detach().device().numpy().astype(float)
             self.kmeans = KMeans(n_clusters=k,n_init=10)
             self.kmeans.fit(self.adapter_vec_array)
             self.cluster_assignments = self.kmeans.labels_

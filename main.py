@@ -182,7 +182,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', default='iDigits', type=str, help='dataset name')
     parser.add_argument('--shuffle', default=False, help='shuffle the data order')
     # parser.add_argument('--output_dir', default='./output', help='path where to save, empty for no saving')
-    parser.add_argument('--device', default='cpu', help='device to use for training / testing')
+    parser.add_argument('--device', default='cuda', help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
     parser.add_argument('--num_workers', default=0, type=int)
