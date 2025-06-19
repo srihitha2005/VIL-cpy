@@ -369,7 +369,7 @@ class CORe50(torch.utils.data.Dataset):
 
         if os.path.exists(train_folder):
             rmtree(train_folder)
-        if os.path.exists(test_folder):
+        if os.path.exists(test_folder): 
             rmtree(test_folder)
         os.mkdir(train_folder)
         os.mkdir(test_folder)
@@ -599,3 +599,118 @@ class DomainNet(torch.utils.data.Dataset):
 
                         move(src, dst)
                 rmtree(os.path.join(self.root, test_list.split('_')[0]))
+
+class OfficeHome(torch.utils.data.Dataset):
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False, mode='cil'):
+        root = os.path.join(root, 'VIL_OfficeHome')
+        self.root = os.path.expanduser(root)
+        self.transform = transform
+        self.target_transform = target_transform
+        self.train = train
+        self.mode = mode
+
+        self.domains = ['Art', 'Clipart', 'Product', 'Real_World']
+        self.urls = {
+            'Art': 'https://www.hemanthdv.org/OfficeHomeDomainData/Art.zip',
+            'Clipart': 'https://www.hemanthdv.org/OfficeHomeDomainData/Clipart.zip',
+            'Product': 'https://www.hemanthdv.org/OfficeHomeDomainData/Product.zip',
+            'Real_World': 'https://www.hemanthdv.org/OfficeHomeDomainData/Real_World.zip'
+        }
+
+        if download:
+            for domain in self.domains:
+                zip_path = os.path.join(self.root, f'{domain}.zip')
+                if not os.path.exists(zip_path):
+                    download_url(self.urls[domain], self.root, filename=f'{domain}.zip')
+
+                extract_path = os.path.join(self.root, domain)
+                if not os.path.exists(extract_path):
+                    with zipfile.ZipFile(zip_path, 'r') as zf:
+                        zf.extractall(self.root)
+
+        # Automatically create train/test folders if they don’t exist
+        if not os.path.exists(os.path.join(self.root, 'train')) or not os.path.exists(os.path.join(self.root, 'test')):
+            self.split()
+
+        data_path = os.path.join(self.root, 'train' if train else 'test')
+        if self.mode not in ['cil', 'joint']:
+            self.data = [datasets.ImageFolder(os.path.join(data_path, d), transform=transform) for d in self.domains]
+        else:
+            self.data = datasets.ImageFolder(data_path, transform=transform)
+
+    def split(self):
+        from sklearn.model_selection import train_test_split
+        for domain in self.domains:
+            domain_path = os.path.join(self.root, domain)
+            all_classes = os.listdir(domain_path)
+            for cls in all_classes:
+                full_path = os.path.join(domain_path, cls)
+                if not os.path.isdir(full_path):
+                    continue
+                images = [os.path.join(full_path, img) for img in os.listdir(full_path)]
+                train_imgs, test_imgs = train_test_split(images, test_size=0.2, random_state=42)
+
+                for split, img_list in zip(['train', 'test'], [train_imgs, test_imgs]):
+                    out_dir = os.path.join(self.root, split, domain, cls)
+                    os.makedirs(out_dir, exist_ok=True)
+                    for img in img_list:
+                        move(img, os.path.join(out_dir, os.path.basename(img)))
+    
+    def __len__(self):
+        if isinstance(self.data, datasets.ImageFolder):
+            return len(self.data)
+        return sum(len(d) for d in self.data)
+    def __getitem__(self, index):
+        # Flatten across domains
+        domain_lengths = [len(d) for d in self.data]
+        for i, l in enumerate(domain_lengths):
+            if index < l:
+                return self.data[i][index]
+            index -= l
+
+#changed
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, root, train=True, transform=None, target_transform=None):
+        self.root = os.path.expanduser(root)
+        self.train = train
+        self.transform = transform
+        self.target_transform = target_transform
+        self.mode = 'vil'
+        self.classes = 6
+        self.data_path = os.path.join(self.root,'VIL_Dataset', 'train' if self.train else 'test')
+
+        if not os.path.exists(self.data_path):
+            raise RuntimeError(f"{self.data_path} not found. Make sure train/test structure exists.")
+
+        # print("Data Path : ",self.data_path)
+        # Get domains like 'domain1', 'domain2', etc.
+        self.domains = sorted([d for d in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, d))])
+
+        # print("Domains: ",self.domains)
+        if self.mode in ['cil', 'joint']:
+            # Combine all domains into one dataset (for CIL)
+            combined_path = []
+            for domain in self.domains:
+                combined_path.append(os.path.join(self.data_path, domain))
+            self.data = datasets.ImageFolder(root=os.path.join(self.data_path, self.domains[0]), transform=self.transform)
+            for domain in self.domains[1:]:
+                self.data.samples.extend(datasets.ImageFolder(os.path.join(self.data_path, domain)).samples)
+                self.data.targets.extend(datasets.ImageFolder(os.path.join(self.data_path, domain)).targets)
+        else:
+            # Keep data domain-wise
+            self.data = [datasets.ImageFolder(os.path.join(self.data_path, d), transform=self.transform) for d in self.domains]
+
+    def __getitem__(self, index):
+        if isinstance(self.data, list):  # domain-wise
+            domain_lengths = [len(d) for d in self.data]
+            for i, l in enumerate(domain_lengths):
+                if index < l:
+                    return self.data[i][index]
+                index -= l
+        else:  # combined for CIL
+            return self.data[index]
+
+    def __len__(self):
+        if isinstance(self.data, list):
+            return sum(len(d) for d in self.data)
+        return len(self.data)

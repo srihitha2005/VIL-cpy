@@ -263,7 +263,7 @@ def iterable_to_str(iterable):
 
 
 def verify_str_arg(value, arg=None, valid_values=None, custom_msg=None):
-    if not isinstance(value, torch._six.string_classes):
+    if not isinstance(path, (str, bytes)):
         if arg is None:
             msg = "Expected type str, but got type {type}."
         else:
@@ -295,7 +295,7 @@ def open_maybe_compressed_file(path):
     """Return a file object that possibly decompresses 'path' on the fly.
        Decompression occurs when argument `path` is a string and ends with '.gz' or '.xz'.
     """
-    if not isinstance(path, torch._six.string_classes):
+    if not isinstance(path, (str, bytes)):
         return path
     if path.endswith('.gz'):
         import gzip

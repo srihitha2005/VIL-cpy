@@ -32,6 +32,16 @@ def set_data_config(args):
     elif args.dataset == "CORe50":
         args.class_num = 50
         args.domain_num = 8
+    
+    #changed
+    elif args.dataset == "OfficeHome":
+        args.class_num = 65
+        args.domain_num = 4
+    
+    elif args.dataset == "Dataset":
+        args.class_num = 6
+        args.domain_num = 2
+
     return args
 
 def main(args):
@@ -123,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=5, type=int)
 
     # Model parameters
-    parser.add_argument('--model', default='vit_base_patch16_224', type=str, metavar='MODEL', help='Name of model to train')
+    parser.add_argument('--model', default='vit_base_patch16_224_in21k', type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT', help='Dropout rate (default: 0.)')
@@ -168,14 +178,14 @@ if __name__ == '__main__':
     parser.add_argument('--recount', type=int, default=1, help='Random erase count (default: 1)')
 
     # Data parameters
-    parser.add_argument('--data-path', default='/local_datasets/', type=str, help='dataset path')
+    # parser.add_argument('--data-path', default='/local_datasets/', type=str, help='dataset path')
     parser.add_argument('--dataset', default='iDigits', type=str, help='dataset name')
     parser.add_argument('--shuffle', default=False, help='shuffle the data order')
-    parser.add_argument('--output_dir', default='./output', help='path where to save, empty for no saving')
-    parser.add_argument('--device', default='cuda', help='device to use for training / testing')
+    # parser.add_argument('--output_dir', default='./output', help='path where to save, empty for no saving')
+    parser.add_argument('--device', default='cpu', help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--pin-mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
@@ -218,12 +228,35 @@ if __name__ == '__main__':
     parser.add_argument('--use_cast_loss', action='store_true', default=False, help='if using CAST loss')
     parser.add_argument('--norm_cast', action='store_true', default=False, help='if using normalization in cast')
     
-   
+    parser.add_argument("--data_path", default=str(Path.home() / "JKS" / "data.txt"))
+    parser.add_argument("--output_dir", default=str(Path.home() / "JKS" / "output"))
+
+    #For replay 
+    parser.add_argument('--replay_buffer_size', type=int, default=500)
+    parser.add_argument('--replay_top_k_percent', type=float, default=0.2)
+    parser.add_argument('--replay_batch_size', type=int, default=16)
+    
     args = parser.parse_args()
 
+    #changed
+    args.distill_temp = 2.0
+    args.alpha_feat = 1.0
+    args.alpha_logit = 1.0
+
+    # Example defaults
+    args.use_spectral_reg = True
+    args.lambda_spec = 1e-3
+
+    
+
+    # Create output directory if specified
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    Path(args.data_path).mkdir(parents=True, exist_ok=True)
+
+    # Create parent directory for data_path (because data_path is a file)
+    Path(args.data_path).parent.mkdir(parents=True, exist_ok=True)
+
     main(args)
+
 
     sys.exit(0)

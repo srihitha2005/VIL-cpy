@@ -3,13 +3,63 @@ import random
 import torch
 from torch.utils.data.dataset import Subset
 from torchvision import datasets, transforms
+#changed
+import numpy as np
+from collections import defaultdict
+import random
+import tqdm
 
 from timm.data import create_transform
 
 from continual_datasets.continual_datasets import *
-
+ 
 import utils
 
+#changed
+def mixup_same_class(img1, img2, alpha=0.4):
+    lam = np.random.beta(alpha, alpha)
+    mixed_img = lam * img1 + (1 - lam) * img2
+    return mixed_img
+
+
+def augment_dataset_same_class_mixup(dataset, num_augs=1, alpha=0.4):
+    """
+    Returns a dataset-like object with .targets and __getitem__ support.
+    All mixup done within the same class.
+    """
+    class_data = defaultdict(list)
+
+    for img, label in dataset:
+        class_data[label].append(img)
+
+    images = []
+    labels = []
+
+    for label, imgs in tqdm.tqdm(class_data.items()):
+        for img in imgs:
+            images.append(img)
+            labels.append(label)
+            for _ in range(num_augs):
+                img2 = random.choice(imgs)
+                mixed_img = mixup_same_class(img, img2, alpha)
+                images.append(mixed_img)
+                labels.append(label)
+
+    # Stack images into a tensor only if they are Tensors
+    if isinstance(images[0], torch.Tensor):
+        images = torch.stack(images)
+        labels = torch.tensor(labels)
+
+        # Return a TensorDataset with .targets
+        dataset = torch.utils.data.TensorDataset(images, labels)
+        dataset.targets = labels
+        return dataset
+    else:
+        # If still in PIL or other format
+        dataset = list(zip(images, labels))
+        dataset.targets = labels  # manually attach
+        return dataset
+    
 class Lambda(transforms.Lambda):
     def __init__(self, lambd, nb_classes):
         super().__init__(lambd)
@@ -107,12 +157,19 @@ def build_continual_dataloader(args):
                 args=args,
             )
 
+            #print(f"Dataset_Train : {dataset_train.data[1].classes} \n Dataset_val : {dataset_val.data[0][2]}")
+
+            # dataset_train.data = [
+            #     augment_dataset_same_class_mixup(domain, num_augs=2, alpha=0.4)
+            #     for domain in tqdm.tqdm(dataset_train.data)
+            # ]
+
             if args.dataset in ['CORe50']:
                 splited_dataset = [(dataset_train[i], dataset_val) for i in range(len(dataset_train))]
                 args.nb_classes = len(dataset_val.classes)
             else:
-                splited_dataset = [(dataset_train[i], dataset_val[i]) for i in range(len(dataset_train))]
-                args.nb_classes = len(dataset_val[0].classes)
+                splited_dataset = [(dataset_train, dataset_val) for i in range(len(dataset_train))]
+                args.nb_classes = dataset_val.classes
     
     elif mode in ['joint']:
         if 'iDigits' in args.dataset:
@@ -156,13 +213,13 @@ def build_continual_dataloader(args):
                 
 
     if args.versatile_inc:
-        splited_dataset, class_mask, domain_list, args = build_vil_scenario(splited_dataset, args)
+        splited_dataset, class_mask, domain_list, args = build_vil_scenario(dataset_train,dataset_val, args)
         for c, d in zip(class_mask, domain_list):
             print(c, d)
     for i in range(len(splited_dataset)):
         dataset_train, dataset_val = splited_dataset[i]
 
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        sampler_train = torch.utils.data.RandomSampler(dataset_train) 
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
         
         data_loader_train = torch.utils.data.DataLoader(
@@ -207,6 +264,15 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
     elif dataset == 'SynDigit':
         dataset_train = SynDigit(args.data_path, train=True, download=True, transform=transform_train)
         dataset_val = SynDigit(args.data_path, train=False, download=True, transform=transform_val)
+    
+    #changed
+    elif dataset == 'OfficeHome':
+        dataset_train = OfficeHome(args.data_path, train=True, transform=transform_train, mode=mode).data
+        dataset_val = OfficeHome(args.data_path, train=False, transform=transform_val, mode=mode).data
+    
+    elif dataset == 'Dataset':
+        dataset_train = Dataset(args.data_path, train=True, transform=transform_train)
+        dataset_val = Dataset(args.data_path, train=False, transform=transform_val)
 
     else:
         raise ValueError('Dataset {} not found.'.format(dataset))
@@ -214,63 +280,56 @@ def get_dataset(dataset, transform_train, transform_val, mode, args,):
     return dataset_train, dataset_val
 
 def split_single_dataset(dataset_train, dataset_val, args):
-    nb_classes = len(dataset_val.classes)
-    assert nb_classes % args.num_tasks == 0
-    classes_per_task = nb_classes // args.num_tasks
+    assert isinstance(dataset_train.data, list), "Expected dataset_train.data to be a list of domain datasets"
+    assert isinstance(dataset_val.data, list), "Expected dataset_val.data to be a list of domain datasets"
+    assert len(dataset_train.data) == len(dataset_val.data), "Mismatch in number of domains"
 
-    labels = [i for i in range(nb_classes)]
-    
-    split_datasets = list()
-    mask = list()
+    # Define your custom task-to-(domain_id, class_ids) mapping
+    custom_tasks = [
+        (0, [0, 1, 2]),       # Task 1: Domain 0 (domain1), classes 0–2
+        (0, [3, 4]),          # Task 2: Domain 0, classes 3–4
+        (1, [0, 1]),          # Task 3: Domain 1 (domain2), classes 0–1
+        (1, [2, 3, 5]),       # Task 4: Domain 1, classes 2, 3, 5
+        (0, [5]),             # Task 5: Domain 0, class 5
+    ]
 
-    if args.shuffle:
-        random.shuffle(labels)
+    split_datasets = []
+    class_masks = []
+    domain_list = []
+    i=0
 
-    for _ in range(args.num_tasks):
-        train_split_indices = list()
-        test_split_indices = list()
-        
-        scope = labels[:classes_per_task]
-        labels = labels[classes_per_task:]
+    for domain_id, class_ids in custom_tasks:
+        domain_train = dataset_train.data[domain_id]
+        domain_val = dataset_val.data[domain_id]
 
-        mask.append(scope)
+        # Filter indices that match the class_ids
+        train_indices = [i for i, y in enumerate(domain_train.targets) if y in class_ids]
+        val_indices   = [i for i, y in enumerate(domain_val.targets) if y in class_ids]
 
-        for k in range(len(dataset_train.targets)):
-            if int(dataset_train.targets[k]) in scope:
-                train_split_indices.append(k)
-                
-        for h in range(len(dataset_val.targets)):
-            if int(dataset_val.targets[h]) in scope:
-                test_split_indices.append(h)
-        
-        subset_train, subset_val =  Subset(dataset_train, train_split_indices), Subset(dataset_val, test_split_indices)
+        # Create Subsets
+        task_train_subset = Subset(domain_train, train_indices)
+        task_val_subset = Subset(domain_val, val_indices)
 
-        split_datasets.append([subset_train, subset_val])
-    
-    return split_datasets, mask
+        split_datasets.append([task_train_subset, task_val_subset])
+        class_masks.append(class_ids)
+        domain_list.append(domain_id)
 
-def build_vil_scenario(splited_dataset, args):
-    datasets = list()
-    class_mask = list()
-    domain_list = list()
+        print(f"Task {i} : Domain {domain_id} Classes {class_ids} → "
+              f"Train samples: {len(train_indices)}, Val samples: {len(val_indices)}")
+        i=i+1
 
-    for i in range(len(splited_dataset)):
-        dataset, mask = split_single_dataset(splited_dataset[i][0], splited_dataset[i][1], args)
-        datasets.append(dataset)
-        class_mask.append(mask)
-        for _ in range(len(dataset)):
-            domain_list.append(f'D{i}')
+    return split_datasets, class_masks,domain_list
 
-    splited_dataset = sum(datasets, [])
-    class_mask = sum(class_mask, [])
 
-    args.num_tasks = len(splited_dataset)
+def build_vil_scenario(dataset_train, dataset_val, args):
+    split_datasets, class_masks,domain_list = split_single_dataset(dataset_train, dataset_val, args)
 
-    zipped = list(zip(splited_dataset, class_mask, domain_list))
-    random.shuffle(zipped)
-    splited_dataset, class_mask, domain_list = zip(*zipped)
+    args.num_tasks = len(split_datasets)
 
-    return splited_dataset, class_mask, domain_list, args
+    # print(f"Splitted datasets : {split_datasets}, class_masks : {class_masks}, domain_list : {domain_list}")
+
+    return split_datasets, class_masks, domain_list, args
+
 
 def build_transform(is_train, args):
     if is_train:

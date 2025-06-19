@@ -224,7 +224,7 @@ class VisionTransformer(nn.Module):
     def __init__(
             self,
             img_size: Union[int, Tuple[int, int]] = 224,
-            patch_size: Union[int, Tuple[int, int]] = 16,
+            patch_size: Union[int, Tuple[int, int]] = 8,
             in_chans: int = 3,
             num_classes: int = 1000,
             global_pool: str = 'token',
@@ -370,7 +370,7 @@ class VisionTransformer(nn.Module):
         # this fn left here for compat with downstream users
         init_weights_vit_timm(m)
 
-    @torch.jit.ignore()
+    @torch.jit.ignore() 
     def load_pretrained(self, checkpoint_path, prefix=''):
         _load_weights(self, checkpoint_path, prefix)
 

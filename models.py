@@ -10,6 +10,7 @@ import torch.nn as nn
 from timm.models._registry import register_model
 from vision_transformer import _create_vision_transformer
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
+import torch
 
 __all__ = [
     'vit_base_patch16_224',
@@ -28,7 +29,38 @@ def _cfg(url='', **kwargs):
     }
 
 @register_model
-def vit_base_patch16_224_in21k(pretrained=False, **kwargs):
+def vit_base_patch16_224_biovit(pretrained=True, **kwargs):
+    """ ViT-Base (ViT-B/16) pretrained on chest X-rays (BioViT / ViT-MAE). """
+    
+    default_cfg = _cfg(
+        url=None,  # Don't use URL for local load
+        custom_load=False,  # Disable auto download
+    )
+    kwargs.update(pretrained_cfg=default_cfg)
+
+    model_args = dict(
+        patch_size=16,
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        **kwargs
+    )
+
+    # Create the architecture
+    model = _create_vision_transformer(
+        'vit_base_patch16_224', pretrained=False, **dict(model_args, **kwargs)
+    )
+
+    # ✅ Manually load your local .pth file here
+    checkpoint_path = "biovil_vit_b16_timm.pth"  # Your local path
+    state_dict = torch.load(checkpoint_path, map_location='cpu')
+    model.load_state_dict(state_dict, strict=False)
+
+    return model
+
+
+@register_model
+def vit_base_patch16_224_in21k(pretrained=True, **kwargs):
     """ ViT-Base (ViT-B/16) from original paper (https://arxiv.org/abs/2010.11929).
     ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
     """
@@ -44,7 +76,7 @@ def vit_base_patch16_224_in21k(pretrained=False, **kwargs):
     return model
 
 @register_model
-def vit_base_patch16_224(pretrained=False, **kwargs):
+def vit_base_patch16_224(pretrained=True, **kwargs):
     """ ViT-Base (ViT-B/16) from original paper (https://arxiv.org/abs/2010.11929).
     ImageNet-1k weights fine-tuned from in21k @ 224x224, source https://github.com/google-research/vision_transformer.
     """
@@ -60,11 +92,11 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
     return model
 
 @register_model
-def vit_base_patch16_clip_224_openai(pretrained=False, **kwargs):
+def vit_base_patch16_clip_224_openai(pretrained=True, **kwargs):
     """ ViT-B/16 CLIP image tower, OpenAI original weights
     """
     model_args = dict(patch_size=16, embed_dim=768, depth=12, num_heads=12, pre_norm=True, norm_layer=nn.LayerNorm)
     
     model = _create_vision_transformer(
         'vit_base_patch16_clip_224.openai', pretrained=pretrained, **dict(model_args, **kwargs))
-    return model
+    return model 

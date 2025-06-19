@@ -5,7 +5,8 @@ import datetime
 import json
 from turtle import undo
 from typing import Iterable
-from pathlib import Path
+import random
+from pathlib import Path 
 
 import torch
 
@@ -30,7 +31,14 @@ class Engine():
         self.class_group_num = 5
         self.classifier_pool = [None for _ in range(self.class_group_num)]
         self.class_group_train_count = [0 for _ in range(self.class_group_num)]
-        
+        #changed
+        self.visited_domains = set()
+
+        #changed 
+        self.replay_buffer = []  # List of tuples: (input, target, score)
+        self.buffer_size = args.replay_buffer_size  # Total buffer capacity
+        self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
+
         self.task_num = len(class_mask)
         self.class_group_size = len(class_mask[0])
         self.distill_head= None
@@ -60,13 +68,42 @@ class Engine():
             self.tanh = torch.nn.Tanh()
             
         self.cs=torch.nn.CosineSimilarity(dim=1,eps=1e-6)
+    #changed
+    @torch.no_grad()
+    def compute_sample_score(self, model, input, target):
+        output = model(input.unsqueeze(0))
+        prob = torch.softmax(output, dim=1)
+        loss = torch.nn.functional.cross_entropy(output, target.unsqueeze(0))
+        entropy = -(prob * torch.log(prob + 1e-8)).sum()
+        return loss.item() + entropy.item()  # combine loss & entropy
 
     def kl_div(self,p,q):
         p=F.softmax(p,dim=1)
         q=F.softmax(q,dim=1)
         kl = torch.mean(torch.sum(p * torch.log(p / q),dim=1))
         return kl
-  
+    
+    #changed
+    def spectral_regularization(self, model, lambda_spec=1e-3, device='cpu'):
+        spec_loss = 0.0
+        for name, param in model.named_parameters():
+            if 'weight' in name and param.ndim >= 2:
+                try:
+                    weight = param.to(device)
+                    with torch.no_grad():  
+                        w = weight.view(weight.size(0), -1)
+                        u = torch.randn(w.size(0), device=device)
+                        for _ in range(3):  # Few iterations are enough
+                            v = torch.nn.functional.normalize(torch.matmul(w.T, u), dim=0)
+                            u = torch.nn.functional.normalize(torch.matmul(w, v), dim=0)
+                        sigma = torch.dot(u, torch.matmul(w, v)).item()
+
+                    spec_loss += (sigma - 1.0)**2  
+                except RuntimeError:
+                    continue
+        return lambda_spec * spec_loss
+
+
     def set_new_head(self, model, labels_to_be_added,task_id):
         len_new_nodes = len(labels_to_be_added)
         self.labels_in_head = np.concatenate((self.labels_in_head, labels_to_be_added))
@@ -161,6 +198,7 @@ class Engine():
                         device: torch.device, epoch: int, max_norm: float = 0,
                         set_training_mode=True, task_id=-1, class_mask=None, ema_model = None, args = None,):
 
+        torch.cuda.empty_cache()
         model.train(set_training_mode)
 
         metric_logger = utils.MetricLogger(delimiter="  ")
@@ -176,15 +214,37 @@ class Engine():
             target = target.to(device, non_blocking=True)
             output = model(input) # (bs, class + n)
             distill_loss=0
-            if self.distill_head != None:
-                feature = model.forward_features(input)[:,0]
-                output_distill = self.distill_head(feature) 
-                #! exclude added nodes in current task during distillation
+            if self.distill_head is not None:
+                feature = model.forward_features(input)[:, 0]
+                with torch.no_grad():
+                    teacher_logits = self.distill_head(feature)
+
+                # Masking to get distillation classes only (older classes)
                 mask = torch.isin(torch.tensor(self.labels_in_head), torch.tensor(self.current_classes))
-                cur_class_nodes = torch.where(mask)[0]#[:-len(self.added_classes_in_cur_task)] #! to be fixed
-                m=torch.isin(torch.tensor(self.labels_in_head[cur_class_nodes]), torch.tensor(list(self.added_classes_in_cur_task)))
+                cur_class_nodes = torch.where(mask)[0]
+                m = torch.isin(torch.tensor(self.labels_in_head[cur_class_nodes]), torch.tensor(list(self.added_classes_in_cur_task)))
                 distill_node_indices = self.labels_in_head[cur_class_nodes][~m]
-                distill_loss = self.kl_div(output[:,distill_node_indices], output_distill[:,distill_node_indices])
+
+                # Get student + teacher logits for distillation
+                student_logits = output[:, distill_node_indices]
+                teacher_logits = teacher_logits[:, distill_node_indices]
+
+                # KL divergence for logits
+                logit_distill_loss = torch.nn.functional.kl_div(
+                    torch.log_softmax(student_logits / args.distill_temp, dim=1),
+                    torch.softmax(teacher_logits / args.distill_temp, dim=1),
+                    reduction='batchmean'
+                ) * (args.distill_temp ** 2)
+
+                # Feature distillation (cosine sim)
+                student_feat = feature
+                with torch.no_grad():
+                    teacher_feat = model.forward_features(input)[:, 0]  # from previous model if needed
+
+                feature_loss = 1 - self.cs(student_feat, teacher_feat.detach()).mean()
+
+                # Combine losses
+                distill_loss = args.alpha_feat * feature_loss + args.alpha_logit * logit_distill_loss
                
         
             if output.shape[-1] > self.num_classes: # there are already added nodes till now 
@@ -241,10 +301,26 @@ class Engine():
                 sys.exit(1)
 
             optimizer.zero_grad()
-            
-            loss.backward(retain_graph=True) 
+            if args.use_spectral_reg:
+                spec_loss = self.spectral_regularization(model, lambda_spec=args.lambda_spec, device=device)
+                loss += spec_loss
+            loss.backward(retain_graph=False) 
             optimizer.step()
-            torch.cuda.synchronize()
+
+            # #Changed
+            # #print("Input : ",input.shape)
+            # for i in range(input.size(0)):  # loop over samples in the batch
+            #     score = self.compute_sample_score(model, input[i], target[i])
+            #     self.replay_buffer.append((input[i].detach().cpu(), target[i].detach().cpu(), score))
+
+
+            # # Trim to top-k by importance
+            # if len(self.replay_buffer) > self.buffer_size:
+            #     self.replay_buffer.sort(key=lambda x: x[2], reverse=True)  # sort by score
+            #     k = int(self.replay_top_k_percent * self.buffer_size)
+            #     self.replay_buffer = self.replay_buffer[:k]
+
+            # torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
@@ -291,6 +367,16 @@ class Engine():
                 
                 input = input.to(device, non_blocking=True)
                 target = target.to(device, non_blocking=True)
+                
+
+                # # changed
+                # if len(self.replay_buffer) > 0:
+                #     replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in random.sample(self.replay_buffer, min(len(self.replay_buffer), args.replay_batch_size))])
+                #     replay_inputs = torch.stack(replay_inputs).to(device)
+                #     replay_targets = torch.stack(replay_targets).to(device)
+                    
+                #     input = torch.cat([input, replay_inputs], dim=0)
+                #     target = torch.cat([target, replay_targets], dim=0)
 
                 # compute output            
                 output = model(input)
@@ -318,7 +404,7 @@ class Engine():
 
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
-                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                # metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
             if total_sum>0:
                 print(f"Max Pooling acc: {correct_sum/total_sum}")
                 
@@ -329,8 +415,8 @@ class Engine():
                 print(self.acc_per_label)
         # gather the stats from all processes
         metric_logger.synchronize_between_processes()
-        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-            .format(top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'], losses=metric_logger.meters['Loss']))
+        print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f}'
+            .format(top1=metric_logger.meters['Acc@1'], losses=metric_logger.meters['Loss']))
 
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -345,7 +431,7 @@ class Engine():
                                 device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args)
 
             stat_matrix[0, i] = test_stats['Acc@1']
-            stat_matrix[1, i] = test_stats['Acc@5']
+            # stat_matrix[1, i] = test_stats['Acc@5']
             stat_matrix[2, i] = test_stats['Loss']
 
             acc_matrix[i, task_id] = test_stats['Acc@1']
@@ -402,6 +488,7 @@ class Engine():
     
     
     def pre_train_task(self, model, data_loader, device, task_id, args):
+        
         self.current_task += 1
         self.current_class_group = int(min(self.class_mask[task_id])/self.class_group_size)
         self.class_group_list.append(self.current_class_group)
@@ -437,17 +524,19 @@ class Engine():
             prev_adapters = model.get_adapter()
             self.prev_adapters = self.flatten_parameters(prev_adapters)
             self.prev_adapters.requires_grad=False
-    
+        self.cur_domain = self.domain_list[task_id]
+
         if task_id==0:
             self.task_type_list.append("Initial")
+            self.visited_domains.add(self.cur_domain)
             return model, optimizer
         
-        prev_class = self.class_mask[task_id-1]
-        prev_domain = self.domain_list[task_id-1]
-        cur_class = self.class_mask[task_id]
         self.cur_domain = self.domain_list[task_id]
         
-        if prev_class == cur_class:
+    
+        if self.cur_domain not in self.visited_domains:
+            # First time seeing this domain → DIL
+            self.visited_domains.add(self.cur_domain)
             self.task_type = "DIL"
         else:
             self.task_type = "CIL"
@@ -479,11 +568,11 @@ class Engine():
                         lr_scheduler, device: torch.device, class_mask=None, args = None,):
 
         # create matrix to save end-of-task accuracies 
-        acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
+        acc_matrix = np.zeros((5, 5))
         
         ema_model = None
-        
-        for task_id in range(args.num_tasks):
+        # Each session = (domain_id, list_of_class_indices)
+        for task_id in range(5):
             # Create new optimizer for each task to clear optimizer status
             if task_id > 0 and args.reinit_optimizer:
                 optimizer = create_optimizer(args, model)
