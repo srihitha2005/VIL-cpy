@@ -355,6 +355,8 @@ class Engine():
 
         metric_logger = utils.MetricLogger(delimiter="  ")
         header = 'Test: [Task {}]'.format(task_id + 1)
+        all_preds = []
+        all_targets = []
 
         # switch to evaluation mode
         model.eval()
@@ -398,7 +400,10 @@ class Engine():
                 
                 output = torch.stack(output_ema, dim=-1).max(dim=-1)[0]
                 loss = criterion(output, target)
-                
+                preds = output.argmax(dim=1)
+                all_preds.append(preds.cpu())
+                all_targets.append(target.cpu())
+
                 if self.args.d_threshold and self.current_task +1 != self.args.num_tasks and self.current_task == task_id:
                     label_correct, label_total = self.update_acc_per_label(label_correct, label_total, output, target)
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -416,9 +421,15 @@ class Engine():
                 print(self.label_train_count)
                 print(self.acc_per_label)
         # gather the stats from all processes
+        all_preds = torch.cat(all_preds).numpy()
+        all_targets = torch.cat(all_targets).numpy()
         metric_logger.synchronize_between_processes()
         print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f}'
             .format(top1=metric_logger.meters['Acc@1'], losses=metric_logger.meters['Loss']))
+        precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro')
+        print(f"Task {task_id+1} Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+        cm = confusion_matrix(all_targets, all_preds)
+        print(f"Confusion Matrix for Task {task_id+1}:\n{cm}")
 
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -572,6 +583,8 @@ class Engine():
 
         # create matrix to save end-of-task accuracies 
         acc_matrix = np.zeros((5, 5))
+        pre_train_acc_matrix = np.zeros((5, 5))  # to store accuracies before each task
+
         
         ema_model = None
         # Each session = (domain_id, list_of_class_indices)
@@ -579,6 +592,12 @@ class Engine():
             # Create new optimizer for each task to clear optimizer status
             if task_id > 0 and args.reinit_optimizer:
                 optimizer = create_optimizer(args, model)
+            if task_id > 0:  
+                self.evaluate_till_now(model=model, data_loader=data_loader, 
+                                device=device, task_id=task_id, 
+                                class_mask=class_mask, acc_matrix=pre_train_acc_matrix, 
+                                ema_model=ema_model, args=args)
+
             
             if task_id == 1 and len(args.adapt_blocks) > 0:
                 # ema_model = ModelEmaV2(model.adapter, decay=args.ema_decay).to(device)
@@ -618,7 +637,15 @@ class Engine():
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                 **{f'test_{k}': v for k, v in test_stats.items()},
                 'epoch': epoch,}
+            # Compute Forward Transfer after training
+            fwt_list = []
+            for i in range(1, 5):
+                fwt = pre_train_acc_matrix[i-1, i] - pre_train_acc_matrix[i, i]
+                fwt_list.append(fwt)
+            avg_fwt = np.mean(fwt_list)
+            print(f"Average Forward Transfer: {avg_fwt:.4f}")
 
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) )
+            
