@@ -601,7 +601,7 @@ class Engine():
                         lr_scheduler, device: torch.device, class_mask=None, args = None,):
 
         # create matrix to save end-of-task accuracies 
-        acc_matrix = np.zeros((5, 5))
+        acc_matrix = np.zeros((7, 7))
         
         ema_model = None
         # Each session = (domain_id, list_of_class_indices)
