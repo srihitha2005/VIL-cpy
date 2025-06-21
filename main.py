@@ -227,7 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_cast_loss', action='store_true', default=False, help='if using CAST loss')
     parser.add_argument('--norm_cast', action='store_true', default=False, help='if using normalization in cast')
     
-    parser.add_argument("--data_path", default="/kaggle/input/vil-dataset-aug/VIL_Dataset")
+    parser.add_argument("--data_path", default="/kaggle/input/vil-dataset-aug/dataset_filtered")
     parser.add_argument("--output_dir", default="/kaggle/working")
 
     #For replay 
