@@ -605,11 +605,11 @@ class Engine():
             # Create new optimizer for each task to clear optimizer status
             if task_id > 0 and args.reinit_optimizer:
                 optimizer = create_optimizer(args, model)
-            if task_id > 0:  
-                self.evaluate_till_now(model=model, data_loader=data_loader, 
-                                device=device, task_id=task_id, 
-                                class_mask=class_mask, acc_matrix=pre_train_acc_matrix, 
-                                ema_model=ema_model, args=args)
+            # if task_id > 0:  
+            #     self.evaluate_till_now(model=model, data_loader=data_loader, 
+            #                     device=device, task_id=task_id, 
+            #                     class_mask=class_mask, acc_matrix=pre_train_acc_matrix, 
+            #                     ema_model=ema_model, args=args)
 
             
             if task_id == 1 and len(args.adapt_blocks) > 0:
