@@ -418,8 +418,6 @@ class Engine():
                 _, preds = torch.max(output, 1)
                 all_targets.extend(target.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
-    
-
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
                 metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
@@ -445,6 +443,7 @@ class Engine():
                       precision=precision, recall=recall, f1=f1))
         
         # Print per-class accuracy
+        per_class_acc = (cm.diagonal() / cm.sum(axis=1))
         for i, acc in enumerate(per_class_acc):
             print(f"Class {i}: Accuracy: {acc:.4f}")
 
