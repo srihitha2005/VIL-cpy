@@ -7,6 +7,9 @@ from turtle import undo
 from typing import Iterable
 import random
 from pathlib import Path 
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import torch
 
@@ -420,6 +423,9 @@ class Engine():
                 self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
                 print(self.label_train_count)
                 print(self.acc_per_label)
+                per_class_acc = label_correct / (label_total + 1e-8)
+                print(f"Class-wise accuracy for Task {task_id+1}: {per_class_acc}")
+
         # gather the stats from all processes
         all_preds = torch.cat(all_preds).numpy()
         all_targets = torch.cat(all_targets).numpy()
