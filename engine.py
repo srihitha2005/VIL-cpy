@@ -434,7 +434,6 @@ class Engine():
         all_targets = np.array(all_targets)
         all_preds = np.array(all_preds)
         precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro')
-        cm = confusion_matrix(all_targets, all_preds)
         metric_logger.synchronize_between_processes()
         # Print unified statement
         print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
@@ -442,12 +441,7 @@ class Engine():
                       loss=metric_logger.meters['Loss'].global_avg,
                       precision=precision, recall=recall, f1=f1))
         
-        # Print per-class accuracy
-        print(f"Confusion matrix : {cm}")
-        per_class_acc = (cm.diagonal() / cm.sum(axis=1))
-        for i, acc in enumerate(per_class_acc):
-            print(f"Class {i}: Accuracy: {acc:.4f}")
-
+    
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
