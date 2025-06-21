@@ -286,11 +286,13 @@ def split_single_dataset(dataset_train, dataset_val, args):
 
     # Define your custom task-to-(domain_id, class_ids) mapping
     custom_tasks = [
-        (0, [0, 1, 2]),       # Task 1: Domain 0 (domain1), classes 0–2
-        (0, [3, 4]),          # Task 2: Domain 0, classes 3–4
-        (1, [0, 1]),          # Task 3: Domain 1 (domain2), classes 0–1
-        (1, [2, 3, 5]),       # Task 4: Domain 1, classes 2, 3, 5
-        (0, [5]),             # Task 5: Domain 0, class 5
+         (1, [0, 1, 2]),    # Task 1: Domain 1, classes 0-2
+         (2, [0, 1]),       # Task 2: Domain 2, classes 0-1
+         (3, [0, 1]),    # Task 3: Domain 3, classes 0-1         
+         (1, [3, 4]),       # Task 4: Domain 1, classes 3-4
+         (2, [2, 3]),       # Task 5: Domain 2, classes 2-3
+         (3, [2]),    # Task 6: Domain 3, classes 2
+         (1, [5]),          # Task 7: Domain 1, class 5
     ]
 
     split_datasets = []
