@@ -416,8 +416,8 @@ class Engine():
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 _, preds = torch.max(output, 1)
-                all_targets.extend(target.cpu().numpy())
-                all_preds.extend(preds.cpu().numpy())
+                all_targets.extend(target.cpu().tolist())
+                all_preds.extend(preds.cpu().tolist())
     
 
                 metric_logger.meters['Loss'].update(loss.item())
