@@ -443,6 +443,7 @@ class Engine():
                       precision=precision, recall=recall, f1=f1))
         
         # Print per-class accuracy
+        print(f"Confusion matrix : {cm}")
         per_class_acc = (cm.diagonal() / cm.sum(axis=1))
         for i, acc in enumerate(per_class_acc):
             print(f"Class {i}: Accuracy: {acc:.4f}")
