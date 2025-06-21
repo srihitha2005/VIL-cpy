@@ -418,8 +418,7 @@ class Engine():
                 _, preds = torch.max(output, 1)
                 all_targets.extend(target.cpu().numpy())
                 all_preds.extend(preds.cpu().numpy())
-                all_targets = np.array(all_targets)
-                all_preds = np.array(all_preds)
+    
                 
                 precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro')
                 cm = confusion_matrix(all_targets, all_preds)
@@ -437,6 +436,8 @@ class Engine():
                 print(self.acc_per_label)
 
         # gather the stats from all processes
+        all_targets = np.array(all_targets)
+        all_preds = np.array(all_preds)
         metric_logger.synchronize_between_processes()
         # Print unified statement
         print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
