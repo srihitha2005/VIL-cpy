@@ -350,13 +350,13 @@ class Engine():
             output = output[:, :self.num_classes] # discard logits of added nodes
             
         return output,correct,total
-    def update_acc_per_label(self, label_correct, label_total, output, target):
-        preds = output.argmax(dim=1)
-        for t, p in zip(target.cpu().numpy(), preds.cpu().numpy()):
-            label_total[t] += 1
-            if t == p:
-                label_correct[t] += 1
-        return label_correct, label_total
+    # def update_acc_per_label(self, label_correct, label_total, output, target):
+    #     preds = output.argmax(dim=1)
+    #     for t, p in zip(target.cpu().numpy(), preds.cpu().numpy()):
+    #         label_total[t] += 1
+    #         if t == p:
+    #             label_correct[t] += 1
+    #     return label_correct, label_total
 
     @torch.no_grad()
     def evaluate(self, model: torch.nn.Module, data_loader, 
@@ -414,8 +414,8 @@ class Engine():
                 all_preds.append(preds.cpu())
                 all_targets.append(target.cpu())
 
-                if self.args.d_threshold and self.current_task +1 != self.args.num_tasks and self.current_task == task_id:
-                    label_correct, label_total = self.update_acc_per_label(label_correct, label_total, output, target)
+                # if self.args.d_threshold and self.current_task +1 != self.args.num_tasks and self.current_task == task_id:
+                #     label_correct, label_total = self.update_acc_per_label(label_correct, label_total, output, target)
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
