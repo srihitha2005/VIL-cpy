@@ -350,7 +350,14 @@ class Engine():
             output = output[:, :self.num_classes] # discard logits of added nodes
             
         return output,correct,total
-    
+    def update_acc_per_label(self, label_correct, label_total, output, target):
+        preds = output.argmax(dim=1)
+        for t, p in zip(target.cpu().numpy(), preds.cpu().numpy()):
+            label_total[t] += 1
+            if t == p:
+                label_correct[t] += 1
+        return label_correct, label_total
+
     @torch.no_grad()
     def evaluate(self, model: torch.nn.Module, data_loader, 
                 device, task_id=-1, class_mask=None, ema_model=None, args=None,):
