@@ -598,11 +598,11 @@ class Engine():
                         lr_scheduler, device: torch.device, class_mask=None, args = None,):
 
         # create matrix to save end-of-task accuracies 
-        acc_matrix = np.zeros((6, 6))
+        acc_matrix = np.zeros((5, 5))
         
         ema_model = None
         # Each session = (domain_id, list_of_class_indices)
-        for task_id in range(6):
+        for task_id in range(5):
             # Create new optimizer for each task to clear optimizer status
             if task_id > 0 and args.reinit_optimizer:
                 optimizer = create_optimizer(args, model)
