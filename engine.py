@@ -320,7 +320,12 @@ class Engine():
             #print("Input : ",input.shape)
             for i in range(input.size(0)):
                 score = self.compute_sample_score(model, input[i], target[i])
-                
+                if(self.current_task == 0 or self.current_task ==2 ):
+                    current_domain = 0
+                elif(self.current_task == 1):
+                    current_domain = 2
+                else:
+                    current_domain=3
                 domain_id = current_domain  # ⚠ You need to track which domain you're on
                 class_id = target[i].item()
                 key = (domain_id, class_id)
@@ -432,7 +437,7 @@ class Engine():
             if total_sum>0:
                 print(f"Max Pooling acc: {correct_sum/total_sum}")
                 
-            if self.args.d_threshold and task_id == self.current_task:
+            if self.args.d_threshold and task_id == self.:
                 domain_idx = int(self.label_train_count[self.current_classes][0])
                 self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
                 print(self.label_train_count)
