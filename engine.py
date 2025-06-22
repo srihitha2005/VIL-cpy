@@ -273,6 +273,7 @@ class Engine():
                 logits = output.index_fill(dim=1, index=not_mask, value=float('-inf'))
 
             loss = criterion(logits, target) # (bs, class), (bs)
+            task_loss = loss  # keep original task loss separately
             
            
             if self.args.use_cast_loss:
@@ -310,9 +311,38 @@ class Engine():
                 sys.exit(1)
 
             optimizer.zero_grad()
-            if args.use_spectral_reg:
-                spec_loss = self.spectral_regularization(model, lambda_spec=args.lambda_spec, device=device)
-                loss += spec_loss
+            # Functional Regularization directly here
+            if args.use_functional_reg:
+                fr_loss = 0.0
+                model.eval()
+                for past_task_id in range(self.current_task):
+                    # Use already stored anchors from your replay_buffer for now:
+                    buffer = self.replay_buffer  # assuming your replay_buffer contains samples
+                    
+                    # Collect anchors from previous task (sampling 10 anchors per task)
+                    anchor_inputs = []
+                    anchor_targets = []
+                    for key in buffer:
+                        domain_id, class_id = key
+                        for sample in buffer[key][:3]:  # take few samples
+                            anchor_inputs.append(sample[0].unsqueeze(0))
+                            anchor_targets.append(sample[1].unsqueeze(0))
+            
+                    if len(anchor_inputs) == 0:
+                        continue  # no anchor for this task, skip
+            
+                    anchor_inputs = torch.cat(anchor_inputs).to(device)
+                    anchor_targets = torch.cat(anchor_targets).to(device)
+            
+                    with torch.no_grad():
+                        old_outputs = self.distill_head(model.forward_features(anchor_inputs)[:, 0])
+            
+                    new_outputs = model(anchor_inputs)
+                    fr_loss += torch.nn.functional.mse_loss(new_outputs, old_outputs)
+                
+                model.train()
+                loss += args.lambda_fr * fr_loss
+
             loss.backward(retain_graph=False) 
             optimizer.step()
 
