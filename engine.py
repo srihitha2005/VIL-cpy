@@ -30,7 +30,6 @@ from collections import defaultdict
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):
-        print(model)
         self.current_task=0
         self.current_classes=[]
         #! distillation
@@ -313,6 +312,10 @@ class Engine():
             if not math.isfinite(loss.item()):
                 print("Loss is {}, stopping training".format(loss.item()))
                 sys.exit(1)
+            if self.current_task == 0:
+                for param in model.parameters():
+                    param.requires_grad = True
+                
 
             optimizer.zero_grad()
             # Functional Regularization directly here
