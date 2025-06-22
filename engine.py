@@ -8,6 +8,8 @@ from typing import Iterable
 import random
 from pathlib import Path 
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
+import torch.nn as nn
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
