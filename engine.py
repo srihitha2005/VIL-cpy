@@ -48,7 +48,7 @@ class Engine():
 
         self.task_num = len(class_mask)
         self.class_group_size = len(class_mask[0])
-        self.distill_head= None
+        self.distill_head = nn.Linear(feature_dim, num_classes).to(device)
         self.model = model
         
         self.num_classes= max([item for mask in class_mask for item in mask])+1
