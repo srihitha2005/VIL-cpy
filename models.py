@@ -11,6 +11,7 @@ from timm.models._registry import register_model
 from vision_transformer import _create_vision_transformer
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 import torch
+import timm
 
 __all__ = [
     'vit_base_patch16_224',
