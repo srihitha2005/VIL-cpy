@@ -312,30 +312,28 @@ class Engine():
 
             optimizer.zero_grad()
             # Functional Regularization directly here
-            if args.use_functional_reg and self.current_task>0:
+            if args.use_functional_reg and self.current_task > 0:
                 fr_loss = 0.0
                 model.eval()
                 for past_task_id in range(self.current_task):
-                    # Use already stored anchors from your replay_buffer for now:
-                    buffer = self.replay_buffer  # assuming your replay_buffer contains samples
-                    
-                    # Collect anchors from previous task (sampling 10 anchors per task)
+                    buffer = self.replay_buffer  
                     anchor_inputs = []
                     anchor_targets = []
                     for key in buffer:
                         domain_id, class_id = key
-                        for sample in buffer[key][:3]:  # take few samples
+                        for sample in buffer[key][:3]:
                             anchor_inputs.append(sample[0].unsqueeze(0))
                             anchor_targets.append(sample[1].unsqueeze(0))
             
                     if len(anchor_inputs) == 0:
-                        continue  # no anchor for this task, skip
+                        continue
             
                     anchor_inputs = torch.cat(anchor_inputs).to(device)
                     anchor_targets = torch.cat(anchor_targets).to(device)
             
-                    # Use hook to extract features from the last block
+                    # Hook to get features
                     features = []
+            
                     def hook(module, input, output):
                         features.append(output)
             
@@ -344,8 +342,10 @@ class Engine():
                         _ = model(anchor_inputs)
                     handle.remove()
             
-                    old_outputs = self.distill_head(features[0][:, 0])  # get CLS token feature
+                    old_features = features[0][:, 0]
+                    old_outputs = self.distill_head(old_features)
             
+                    # Now directly compute new_outputs without any hook
                     new_outputs = model(anchor_inputs)
                     fr_loss += torch.nn.functional.mse_loss(new_outputs, old_outputs)
             
