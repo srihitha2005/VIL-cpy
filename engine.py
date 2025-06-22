@@ -334,17 +334,27 @@ class Engine():
                     anchor_inputs = torch.cat(anchor_inputs).to(device)
                     anchor_targets = torch.cat(anchor_targets).to(device)
             
+                    # Use hook to extract features from the last block
+                    features = []
+                    def hook(module, input, output):
+                        features.append(output)
+            
+                    handle = model.blocks[-1].register_forward_hook(hook)
                     with torch.no_grad():
-                        old_outputs = self.distill_head(model.forward_features(anchor_inputs)[:, 0])
+                        _ = model(anchor_inputs)
+                    handle.remove()
+            
+                    old_outputs = self.distill_head(features[0][:, 0])  # get CLS token feature
             
                     new_outputs = model(anchor_inputs)
                     fr_loss += torch.nn.functional.mse_loss(new_outputs, old_outputs)
-                
+            
                 model.train()
                 loss += args.lambda_fr * fr_loss
-
-            loss.backward(retain_graph=False) 
+            
+            loss.backward(retain_graph=False)
             optimizer.step()
+
 
             #Changed
             #print("Input : ",input.shape)
