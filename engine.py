@@ -30,6 +30,7 @@ from collections import defaultdict
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):
+        print(model)
         self.current_task=0
         self.current_classes=[]
         #! distillation
