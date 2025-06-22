@@ -312,7 +312,7 @@ class Engine():
 
             optimizer.zero_grad()
             # Functional Regularization directly here
-            if args.use_functional_reg:
+            if args.use_functional_reg and current_task>0:
                 fr_loss = 0.0
                 model.eval()
                 for past_task_id in range(self.current_task):
