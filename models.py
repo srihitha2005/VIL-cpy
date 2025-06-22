@@ -62,11 +62,8 @@ def vit_base_patch16_224_biovit(pretrained=True, **kwargs):
 @register_model
 def vit_base_patch16_224_in1k(pretrained=True, **kwargs):
     """ ViT-Base (ViT-B/16) pretrained on ImageNet-1k """
-    
-    default_cfg = _cfg(
-        url=None,
-        custom_load=False
-    )
+
+    default_cfg = _cfg(url=None, custom_load=False)
     kwargs.update(pretrained_cfg=default_cfg)
 
     model_args = dict(
@@ -82,9 +79,15 @@ def vit_base_patch16_224_in1k(pretrained=True, **kwargs):
     )
 
     if pretrained:
-        # Use timm pretrained weights directly
+        # Load pretrained model with default head (1000 classes)
         pretrained_model = timm.create_model('vit_base_patch16_224', pretrained=True)
-        model.load_state_dict(pretrained_model.state_dict(), strict=False)
+
+        # Filter out the classifier head
+        pretrained_dict = pretrained_model.state_dict()
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if not k.startswith('head')}
+
+        # Load only matching keys
+        model.load_state_dict(pretrained_dict, strict=False)
 
     return model
 
