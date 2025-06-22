@@ -315,18 +315,18 @@ class Engine():
             loss.backward(retain_graph=False) 
             optimizer.step()
 
-            # #Changed
-            # #print("Input : ",input.shape)
-            # for i in range(input.size(0)):  # loop over samples in the batch
-            #     score = self.compute_sample_score(model, input[i], target[i])
-            #     self.replay_buffer.append((input[i].detach().cpu(), target[i].detach().cpu(), score))
+            #Changed
+            #print("Input : ",input.shape)
+            for i in range(input.size(0)):  # loop over samples in the batch
+                score = self.compute_sample_score(model, input[i], target[i])
+                self.replay_buffer.append((input[i].detach().cpu(), target[i].detach().cpu(), score))
 
 
-            # # Trim to top-k by importance
-            # if len(self.replay_buffer) > self.buffer_size:
-            #     self.replay_buffer.sort(key=lambda x: x[2], reverse=True)  # sort by score
-            #     k = int(self.replay_top_k_percent * self.buffer_size)
-            #     self.replay_buffer = self.replay_buffer[:k]
+            # Trim to top-k by importance
+            if len(self.replay_buffer) > self.buffer_size:
+                self.replay_buffer.sort(key=lambda x: x[2], reverse=True)  # sort by score
+                k = int(self.replay_top_k_percent * self.buffer_size)
+                self.replay_buffer = self.replay_buffer[:k]
 
             torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
@@ -386,14 +386,14 @@ class Engine():
                 target = target.to(device, non_blocking=True)
                 
 
-                # # changed
-                # if len(self.replay_buffer) > 0:
-                #     replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in random.sample(self.replay_buffer, min(len(self.replay_buffer), args.replay_batch_size))])
-                #     replay_inputs = torch.stack(replay_inputs).to(device)
-                #     replay_targets = torch.stack(replay_targets).to(device)
+                # changed
+                if len(self.replay_buffer) > 0:
+                    replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in random.sample(self.replay_buffer, min(len(self.replay_buffer), args.replay_batch_size))])
+                    replay_inputs = torch.stack(replay_inputs).to(device)
+                    replay_targets = torch.stack(replay_targets).to(device)
                     
-                #     input = torch.cat([input, replay_inputs], dim=0)
-                #     target = torch.cat([target, replay_targets], dim=0)
+                    input = torch.cat([input, replay_inputs], dim=0)
+                    target = torch.cat([target, replay_targets], dim=0)
 
                 # compute output            
                 output = model(input)
