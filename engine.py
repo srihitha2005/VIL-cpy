@@ -31,7 +31,7 @@ class Engine():
         self.current_task=0
         self.current_classes=[]
         #! distillation
-        self.class_group_num = 5
+        self.class_group_num = 0
         self.classifier_pool = [None for _ in range(self.class_group_num)]
         self.class_group_train_count = [0 for _ in range(self.class_group_num)]
         #changed
