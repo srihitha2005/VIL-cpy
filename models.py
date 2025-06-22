@@ -61,32 +61,31 @@ def vit_base_patch16_224_biovit(pretrained=True, **kwargs):
 
 @register_model
 def vit_base_patch16_224_in1k(pretrained=True, **kwargs):
-    """ ViT-Base (ViT-B/16) pretrained on ImageNet-1k """
-
-    default_cfg = _cfg(url=None, custom_load=False)
-    kwargs.update(pretrained_cfg=default_cfg)
-
-    model_args = dict(
-        patch_size=16,
-        embed_dim=768,
-        depth=12,
-        num_heads=12,
-        **kwargs
-    )
-
-    model = _create_vision_transformer(
-        'vit_base_patch16_224', pretrained=False, **dict(model_args, **kwargs)
+    """
+    ViT-Base (ViT-B/16) pretrained on ImageNet-1K using timm.
+    """
+    num_classes = kwargs.get('num_classes', 6)
+    
+    # Always create model first with correct head shape
+    model = timm.create_model(
+        'vit_base_patch16_224',
+        pretrained=False,
+        num_classes=num_classes
     )
 
     if pretrained:
-        # Load pretrained model with default head (1000 classes)
-        pretrained_model = timm.create_model('vit_base_patch16_224', pretrained=True)
+        # Load pretrained weights
+        pretrained_model = timm.create_model(
+            'vit_base_patch16_224',
+            pretrained=True,
+            num_classes=1000  # original head shape
+        )
 
-        # Filter out the classifier head
+        # Remove head weights (head.weight and head.bias)
         pretrained_dict = pretrained_model.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if not k.startswith('head')}
-
-        # Load only matching keys
+        
+        # Load pretrained weights into new model
         model.load_state_dict(pretrained_dict, strict=False)
 
     return model
