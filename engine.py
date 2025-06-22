@@ -398,10 +398,25 @@ class Engine():
 
                 # changed
                 if len(self.replay_buffer) > 0:
-                    replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in random.sample(self.replay_buffer, min(len(self.replay_buffer), args.replay_batch_size))])
+                    # Flatten buffer
+                    all_replay_samples = []
+                    for key in self.replay_buffer:
+                        all_replay_samples.extend(self.replay_buffer[key])
+                    
+                    # Sample
+                    replay_samples = random.sample(
+                        all_replay_samples, 
+                        min(len(all_replay_samples), args.replay_batch_size)
+                    )
+                    
+                    # Unpack inputs and targets
+                    replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in replay_samples])
+                    
+                    # Stack tensors
                     replay_inputs = torch.stack(replay_inputs).to(device)
                     replay_targets = torch.stack(replay_targets).to(device)
                     
+                    # Concatenate replay with current batch
                     input = torch.cat([input, replay_inputs], dim=0)
                     target = torch.cat([target, replay_targets], dim=0)
 
