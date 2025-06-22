@@ -24,7 +24,7 @@ import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
-
+from collections import defaultdict
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):
@@ -41,7 +41,8 @@ class Engine():
         self.visited_domains = set()
 
         #changed 
-        self.replay_buffer = []  # List of tuples: (input, target, score)
+        self.replay_buffer = defaultdict(list)  # key: (domain_id, class_id) → list of samples
+        self.buffer_size_per_key = args.replay_buffer_size_per_key  # new argument (explained below)
         self.buffer_size = args.replay_buffer_size  # Total buffer capacity
         self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
 
@@ -317,16 +318,20 @@ class Engine():
 
             #Changed
             #print("Input : ",input.shape)
-            for i in range(input.size(0)):  # loop over samples in the batch
+            for i in range(input.size(0)):
                 score = self.compute_sample_score(model, input[i], target[i])
-                self.replay_buffer.append((input[i].detach().cpu(), target[i].detach().cpu(), score))
-
-
-            # Trim to top-k by importance
-            if len(self.replay_buffer) > self.buffer_size:
-                self.replay_buffer.sort(key=lambda x: x[2], reverse=True)  # sort by score
-                k = int(self.replay_top_k_percent * self.buffer_size)
-                self.replay_buffer = self.replay_buffer[:k]
+                
+                domain_id = current_domain  # ⚠ You need to track which domain you're on
+                class_id = target[i].item()
+                key = (domain_id, class_id)
+                
+                self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
+            
+                # Maintain per-key buffer size
+                if len(self.replay_buffer[key]) > self.buffer_size_per_key:
+                    self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
+                    k = int(self.replay_top_k_percent * self.buffer_size_per_key)
+                    self.replay_buffer[key] = self.replay_buffer[key][:k]
 
             torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
