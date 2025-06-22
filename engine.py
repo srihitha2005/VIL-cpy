@@ -31,7 +31,10 @@ class Engine():
         self.current_task=0
         self.current_classes=[]
         #! distillation
-        self.class_group_num = 0
+        max_class_id = max([item for mask in class_mask for item in mask])
+        self.class_group_size = len(class_mask[0])  # keep this as it is
+        self.class_group_num = (max_class_id // self.class_group_size) + 1
+
         self.classifier_pool = [None for _ in range(self.class_group_num)]
         self.class_group_train_count = [0 for _ in range(self.class_group_num)]
         #changed
