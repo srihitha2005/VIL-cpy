@@ -234,6 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--replay_buffer_size', type=int, default=1000)
     parser.add_argument('--replay_top_k_percent', type=float, default=0.4)
     parser.add_argument('--replay_batch_size', type=int, default=16)
+    parser.add_argument('--replay_buffer_size_per_key', type=int, default=28)
     
     args = parser.parse_args()
 
