@@ -437,7 +437,7 @@ class Engine():
             if total_sum>0:
                 print(f"Max Pooling acc: {correct_sum/total_sum}")
                 
-            if self.args.d_threshold and task_id == self.:
+            if self.args.d_threshold and task_id == self.current_task:
                 domain_idx = int(self.label_train_count[self.current_classes][0])
                 self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
                 print(self.label_train_count)
