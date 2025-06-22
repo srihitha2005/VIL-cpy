@@ -53,7 +53,8 @@ class Engine():
         self.model = model
         
         self.num_classes= max([item for mask in class_mask for item in mask])+1
-        self.distill_head = nn.Linear(768, self.num_classes).to(device)
+        self.distill_head = None
+        model.distill_head = nn.Linear(768, self.num_classes).to(device)        
         self.labels_in_head = np.arange(self.num_classes)
         self.added_classes_in_cur_task = set()
         self.head_timestamps = np.zeros_like(self.labels_in_head)
@@ -345,7 +346,7 @@ class Engine():
                     handle.remove()
             
                     old_features = features[0][:, 0]
-                    old_outputs = self.distill_head(old_features)
+                    old_outputs = model.distill_head(old_features)
             
                     # Now directly compute new_outputs without any hook
                     new_outputs = model(anchor_inputs)
