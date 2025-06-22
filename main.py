@@ -133,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', default=5, type=int)
 
     # Model parameters
-    parser.add_argument('--model', default='vit_base_patch16_224_in21k', type=str, metavar='MODEL', help='Name of model to train')
+    parser.add_argument('--model', default='vit_base_patch16_224_biovit', type=str, metavar='MODEL', help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--pretrained', default=True, help='Load pretrained model or not')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT', help='Dropout rate (default: 0.)')
