@@ -58,6 +58,34 @@ def vit_base_patch16_224_biovit(pretrained=True, **kwargs):
 
     return model
 
+@register_model
+def vit_base_patch16_224_in1k(pretrained=True, **kwargs):
+    """ ViT-Base (ViT-B/16) pretrained on ImageNet-1k """
+    
+    default_cfg = _cfg(
+        url=None,
+        custom_load=False
+    )
+    kwargs.update(pretrained_cfg=default_cfg)
+
+    model_args = dict(
+        patch_size=16,
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        **kwargs
+    )
+
+    model = _create_vision_transformer(
+        'vit_base_patch16_224', pretrained=False, **dict(model_args, **kwargs)
+    )
+
+    if pretrained:
+        # Use timm pretrained weights directly
+        pretrained_model = timm.create_model('vit_base_patch16_224', pretrained=True)
+        model.load_state_dict(pretrained_model.state_dict(), strict=False)
+
+    return model
 
 @register_model
 def vit_base_patch16_224_in21k(pretrained=True, **kwargs):
