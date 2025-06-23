@@ -319,46 +319,9 @@ class Engine():
 
             optimizer.zero_grad()
             # Functional Regularization directly here
-            if args.use_functional_reg and self.current_task > 0:
-                fr_loss = 0.0
-                model.eval()
-                for past_task_id in range(self.current_task):
-                    buffer = self.replay_buffer  
-                    anchor_inputs = []
-                    anchor_targets = []
-                    for key in buffer:
-                        domain_id, class_id = key
-                        for sample in buffer[key][:3]:
-                            anchor_inputs.append(sample[0].unsqueeze(0))
-                            anchor_targets.append(sample[1].unsqueeze(0))
-            
-                    if len(anchor_inputs) == 0:
-                        continue
-            
-                    anchor_inputs = torch.cat(anchor_inputs).to(device)
-                    anchor_targets = torch.cat(anchor_targets).to(device)
-            
-                    # Hook to get features
-                    features = []
-            
-                    def hook(module, input, output):
-                        features.append(output)
-            
-                    handle = model.blocks[-1].register_forward_hook(hook)
-                    with torch.no_grad():
-                        _ = model(anchor_inputs)
-                    handle.remove()
-            
-                    old_features = features[0][:, 0]
-                    old_outputs = model.distill_head(old_features)
-            
-                    # Now directly compute new_outputs without any hook
-                    new_outputs = model(anchor_inputs)
-                    fr_loss += torch.nn.functional.mse_loss(new_outputs, old_outputs)
-            
-                model.train()
-                loss += args.lambda_fr * fr_loss
-            
+            if args.use_spectral_reg:
+                spec_loss = self.spectral_regularization(model, lambda_spec=args.lambda_spec, device=device)
+                loss += spec_loss            
             loss.backward(retain_graph=False)
             optimizer.step()
 
