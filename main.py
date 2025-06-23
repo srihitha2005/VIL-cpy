@@ -239,17 +239,15 @@ if __name__ == '__main__':
     parser.add_argument('--use_functional_reg', action='store_true')
     parser.add_argument('--lambda_fr', type=float, default=1e-3)
 
-    
+    parser.add_argument('--distill_temp', type=float, default=2.0, help='Distillation temperature')
+    parser.add_argument('--alpha_feat', type=float, default=1.0, help='Feature distillation loss weight')
+    parser.add_argument('--alpha_logit', type=float, default=1.0, help='Logit distillation loss weight')
+    parser.add_argument('--use_spectral_reg', action='store_true', help='Use spectral regularization')
+    parser.add_argument('--lambda_spec', type=float, default=1e-3, help='Spectral regularization weight')
+
     args = parser.parse_args()
 
     #changed
-    args.distill_temp = 2.0
-    args.alpha_feat = 1.0
-    args.alpha_logit = 1.0
-
-    # Example defaults
-    args.use_spectral_reg = True
-    args.lambda_spec = 1e-3
 
     
 
