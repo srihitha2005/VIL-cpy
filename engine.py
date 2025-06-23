@@ -355,7 +355,7 @@ class Engine():
             metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
 
             if ema_model is not None:
-                ema_model.update(model)
+                ema_model.update(model.get_adapter())
             
         # gather the stats from all processes
         metric_logger.synchronize_between_processes()
