@@ -39,7 +39,7 @@ def set_data_config(args):
         args.domain_num = 4
     
     elif args.dataset == "Dataset":
-        args.class_num = 6
+        args.class_num = 5
         args.domain_num = 3
 
     return args
