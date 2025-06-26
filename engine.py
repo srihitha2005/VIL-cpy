@@ -209,7 +209,7 @@ class Engine():
                         criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                         device: torch.device, epoch: int, max_norm: float = 0,
                         set_training_mode=True, task_id=-1, class_mask=None, ema_model = None, args = None,):
-
+        print("Entered")
         torch.cuda.empty_cache()
         model.train(set_training_mode)
 
