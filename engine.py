@@ -271,12 +271,12 @@ class Engine():
             # here is the trick to mask out classes of non-current tasks
             if args.train_mask and class_mask is not None:
                 mask = class_mask[task_id]
-                not_mask = np.setdiff1d(np.arange(args.nb_classes), mask)
-                print("output.shape:", output.shape)
-                print("mask:", mask)
-                print("not_mask:", not_mask)
-                print("args.nb_classes:", args.nb_classes)
-                print("class_mask[task_id]:", class_mask[task_id])
+                not_mask = np.setdiff1d(np.arange(5), mask)
+                # print("output.shape:", output.shape)
+                # print("mask:", mask)
+                # print("not_mask:", not_mask)
+                # print("args.nb_classes:", args.nb_classes)
+                # print("class_mask[task_id]:", class_mask[task_id])
                 not_mask_tensor = torch.tensor(not_mask, dtype=torch.int64).to(output.device)
                 print("not_mask_tensor:", not_mask_tensor)
                 logits = output.index_fill(dim=1, index=not_mask_tensor, value=float('-inf'))
