@@ -282,9 +282,9 @@ class Engine():
                 logits = output.index_fill(dim=1, index=not_mask_tensor, value=float('-inf'))
 
             # Add your debug prints here
-            print("Labels:", target)
-            print("Min label:", target.min().item(), "Max label:", target.max().item())
-            print("Model output shape:", logits.shape)
+            # print("Labels:", target)
+            # print("Min label:", target.min().item(), "Max label:", target.max().item())
+            # print("Model output shape:", logits.shape)
             loss = criterion(logits, target) # (bs, class), (bs)
             task_loss = loss  # keep original task loss separately
             
