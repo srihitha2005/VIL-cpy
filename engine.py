@@ -278,7 +278,7 @@ class Engine():
                 # print("args.nb_classes:", args.nb_classes)
                 # print("class_mask[task_id]:", class_mask[task_id])
                 not_mask_tensor = torch.tensor(not_mask, dtype=torch.int64).to(output.device)
-                print("not_mask_tensor:", not_mask_tensor)
+                # print("not_mask_tensor:", not_mask_tensor)
                 logits = output.index_fill(dim=1, index=not_mask_tensor, value=float('-inf'))
 
             # Add your debug prints here
