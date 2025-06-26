@@ -129,7 +129,7 @@ def build_continual_dataloader(args):
             )
 
             splited_dataset, class_mask, domain_list = split_single_dataset(dataset_train, dataset_val, args)
-            args.nb_classes = len(dataset_val.classes)
+            args.nb_classes = dataset_val.classes
 
     elif mode in ['dil', 'vil']:
         if 'iDigits' in args.dataset:
