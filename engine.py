@@ -274,7 +274,10 @@ class Engine():
                 not_mask = np.setdiff1d(np.arange(args.nb_classes), mask)
                 not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
                 logits = output.index_fill(dim=1, index=not_mask, value=float('-inf'))
-
+            # Add your debug prints here
+            print("Labels:", target)
+            print("Min label:", target.min().item(), "Max label:", target.max().item())
+            print("Model output shape:", logits.shape)
             loss = criterion(logits, target) # (bs, class), (bs)
             task_loss = loss  # keep original task loss separately
             
