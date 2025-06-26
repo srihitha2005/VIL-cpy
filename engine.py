@@ -336,27 +336,27 @@ class Engine():
             optimizer.step()
 
 
-            #Changed
-            #print("Input : ",input.shape)
-            for i in range(input.size(0)):
-                score = self.compute_sample_score(model, input[i], target[i])
-                if(self.current_task == 0 or self.current_task ==2 ):
-                    current_domain = 0
-                elif(self.current_task == 1):
-                    current_domain = 2
-                else:
-                    current_domain=3
-                domain_id = current_domain  # ⚠ You need to track which domain you're on
-                class_id = target[i].item()
-                key = (domain_id, class_id)
+            # #Changed
+            # #print("Input : ",input.shape)
+            # for i in range(input.size(0)):
+            #     score = self.compute_sample_score(model, input[i], target[i])
+            #     if(self.current_task == 0 or self.current_task ==2 ):
+            #         current_domain = 0
+            #     elif(self.current_task == 1):
+            #         current_domain = 2
+            #     else:
+            #         current_domain=3
+            #     domain_id = current_domain  # ⚠ You need to track which domain you're on
+            #     class_id = target[i].item()
+            #     key = (domain_id, class_id)
                 
-                self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
+            #     self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
             
-            # Maintain per-key buffer size
-            if len(self.replay_buffer[key]) > self.buffer_size_per_key:
-                self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
-                k = int(self.replay_top_k_percent * self.buffer_size_per_key)
-                self.replay_buffer[key] = self.replay_buffer[key][:k]
+            # # Maintain per-key buffer size
+            # if len(self.replay_buffer[key]) > self.buffer_size_per_key:
+            #     self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
+            #     k = int(self.replay_top_k_percent * self.buffer_size_per_key)
+            #     self.replay_buffer[key] = self.replay_buffer[key][:k]
 
             torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
