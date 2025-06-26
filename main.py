@@ -197,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
     # Continual learning parameters
-    parser.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
+    parser.add_argument('--num_tasks', default=5, type=int, help='number of sequential tasks')
     parser.add_argument('--train_mask', default=True, type=bool, help='if using the class mask at training')
     parser.add_argument('--task_inc', action='store_true', default=False, help='if doing task incremental')
     parser.add_argument('--domain_inc', action='store_true', default=False, help='if doing domain incremental')
@@ -205,7 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--joint_train', default=False, help='if doing joint training')
 
     # Prompt parameters
-    parser.add_argument('--adapt_blocks', default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    parser.add_argument('--adapt_blocks', default=[0, 1, 2, 3, 4])
     parser.add_argument('--ema_decay', type=float, default=0.9999, help='EMA decay rate')
     parser.add_argument('--num_freeze_epochs', type=int,default=3)
     parser.add_argument('--eval_only_emas', default=False)
@@ -248,7 +248,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     #changed
-
+    args.nb_classes = 5
     
 
     # Create output directory if specified
