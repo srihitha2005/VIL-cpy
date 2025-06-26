@@ -503,8 +503,8 @@ class Engine():
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
                                 device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args)
             print(f"\nTesting on Task {i}:")
-            print(f"Test Dataset: {getattr(data_loader[i]['val'], 'dataset', data_loader[i]['val'])}")
             print(f"Domain: {self.domain_list[i]}")
+            print(f"Classes: {self.class_mask[i]}") 
 
 
             stat_matrix[0, i] = test_stats['Acc@1']
@@ -663,8 +663,9 @@ class Engine():
             print()
             print()
             print(f"\n--- Task {task_id}: ---")
-            print(f"Training on Dataset: {getattr(data_loader[task_id]['train'], 'dataset', data_loader[task_id]['train'])}")
-            print(f"Domain: {self.domain_list[task_id]}")
+            print("Train: ")
+            print(f"Domain: {self.domain_list[i]}")
+            print(f"Classes: {self.class_mask[i]}")    
             print()
             print()
             model, optimizer = self.pre_train_task(model, data_loader[task_id]['train'], device, task_id,args)
