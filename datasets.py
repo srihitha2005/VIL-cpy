@@ -116,7 +116,7 @@ def build_continual_dataloader(args):
                 v = [val[i+args.num_tasks*j] for j in range(len(dataset_list))]
                 splited_dataset.append((torch.utils.data.ConcatDataset(t), torch.utils.data.ConcatDataset(v)))
 
-            args.nb_classes = len(splited_dataset[0][1].datasets[0].dataset.classes)
+            args.nb_classes = 5
             class_mask = np.unique(np.array(mask), axis=0).tolist()[0]
         
         else:
