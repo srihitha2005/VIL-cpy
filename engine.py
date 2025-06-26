@@ -209,7 +209,7 @@ class Engine():
                         criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                         device: torch.device, epoch: int, max_norm: float = 0,
                         set_training_mode=True, task_id=-1, class_mask=None, ema_model = None, args = None,):
-        print("Entered")
+        
         torch.cuda.empty_cache()
         model.train(set_training_mode)
 
@@ -267,7 +267,7 @@ class Engine():
                         output[:, added_class] = output[:,cur_node]# replace logit value of added label
                     
                 output = output[:, :self.num_classes]       
-                
+            print("Entered")
             # here is the trick to mask out classes of non-current tasks
             if args.train_mask and class_mask is not None:
                 mask = class_mask[task_id]
