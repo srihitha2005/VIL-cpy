@@ -66,7 +66,7 @@ def main(args):
     model = create_model(
         args.model,
         pretrained=args.pretrained,
-        num_classes=args.nb_classes,
+        num_classes=5,
         drop_rate=args.drop,
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
