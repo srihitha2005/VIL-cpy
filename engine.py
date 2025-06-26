@@ -342,11 +342,11 @@ class Engine():
                 
             #     self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
             
-                # Maintain per-key buffer size
-                if len(self.replay_buffer[key]) > self.buffer_size_per_key:
-                    self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
-                    k = int(self.replay_top_k_percent * self.buffer_size_per_key)
-                    self.replay_buffer[key] = self.replay_buffer[key][:k]
+            # # Maintain per-key buffer size
+            # if len(self.replay_buffer[key]) > self.buffer_size_per_key:
+            #     self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
+            #     k = int(self.replay_top_k_percent * self.buffer_size_per_key)
+            #     self.replay_buffer[key] = self.replay_buffer[key][:k]
 
             torch.cuda.synchronize()
             metric_logger.update(Loss=loss.item())
