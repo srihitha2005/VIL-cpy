@@ -12,7 +12,7 @@ import torch.nn as nn
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from collections import Counter
 import torch
 
 import numpy as np
@@ -43,10 +43,10 @@ class Engine():
         self.visited_domains = set()
 
         #changed 
-        self.replay_buffer = defaultdict(list)  # key: (domain_id, class_id) → list of samples
-        self.buffer_size_per_key = args.replay_buffer_size_per_key  # new argument (explained below)
-        self.buffer_size = args.replay_buffer_size  # Total buffer capacity
-        self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
+        # self.replay_buffer = defaultdict(list)  # key: (domain_id, class_id) → list of samples
+        # self.buffer_size_per_key = args.replay_buffer_size_per_key  # new argument (explained below)
+        # self.buffer_size = args.replay_buffer_size  # Total buffer capacity
+        # self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
 
         self.task_num = len(class_mask)
         self.class_group_size = len(class_mask[0])
@@ -326,21 +326,21 @@ class Engine():
             optimizer.step()
 
 
-            #Changed
-            #print("Input : ",input.shape)
-            for i in range(input.size(0)):
-                score = self.compute_sample_score(model, input[i], target[i])
-                if(self.current_task == 0 or self.current_task ==2 ):
-                    current_domain = 0
-                elif(self.current_task == 1):
-                    current_domain = 2
-                else:
-                    current_domain=3
-                domain_id = current_domain  # ⚠ You need to track which domain you're on
-                class_id = target[i].item()
-                key = (domain_id, class_id)
+            # #Changed
+            # #print("Input : ",input.shape)
+            # for i in range(input.size(0)):
+            #     score = self.compute_sample_score(model, input[i], target[i])
+            #     if(self.current_task == 0 or self.current_task ==2 ):
+            #         current_domain = 0
+            #     elif(self.current_task == 1):
+            #         current_domain = 2
+            #     else:
+            #         current_domain=3
+            #     domain_id = current_domain  # ⚠ You need to track which domain you're on
+            #     class_id = target[i].item()
+            #     key = (domain_id, class_id)
                 
-                self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
+            #     self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
             
                 # Maintain per-key buffer size
                 if len(self.replay_buffer[key]) > self.buffer_size_per_key:
@@ -407,28 +407,28 @@ class Engine():
                 
 
                 # changed
-                if len(self.replay_buffer) > 0:
-                    # Flatten buffer
-                    all_replay_samples = []
-                    for key in self.replay_buffer:
-                        all_replay_samples.extend(self.replay_buffer[key])
+                # if len(self.replay_buffer) > 0:
+                #     # Flatten buffer
+                #     all_replay_samples = []
+                #     for key in self.replay_buffer:
+                #         all_replay_samples.extend(self.replay_buffer[key])
                     
-                    # Sample
-                    replay_samples = random.sample(
-                        all_replay_samples, 
-                        min(len(all_replay_samples), args.replay_batch_size)
-                    )
+                #     # Sample
+                #     replay_samples = random.sample(
+                #         all_replay_samples, 
+                #         min(len(all_replay_samples), args.replay_batch_size)
+                #     )
                     
-                    # Unpack inputs and targets
-                    replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in replay_samples])
+                #     # Unpack inputs and targets
+                #     replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in replay_samples])
                     
-                    # Stack tensors
-                    replay_inputs = torch.stack(replay_inputs).to(device)
-                    replay_targets = torch.stack(replay_targets).to(device)
+                #     # Stack tensors
+                #     replay_inputs = torch.stack(replay_inputs).to(device)
+                #     replay_targets = torch.stack(replay_targets).to(device)
                     
-                    # Concatenate replay with current batch
-                    input = torch.cat([input, replay_inputs], dim=0)
-                    target = torch.cat([target, replay_targets], dim=0)
+                #     # Concatenate replay with current batch
+                #     input = torch.cat([input, replay_inputs], dim=0)
+                #     target = torch.cat([target, replay_targets], dim=0)
 
                 # compute output            
                 output = model(input)
@@ -479,7 +479,18 @@ class Engine():
                       loss=metric_logger.meters['Loss'].global_avg,
                       precision=precision, recall=recall, f1=f1))
         
-    
+        # Accumulate per-class correct and total
+        class_correct = Counter()
+        class_total = Counter()
+        for t, p in zip(all_targets, all_preds):
+            class_total[t] += 1
+            if t == p:
+                class_correct[t] += 1
+        
+        print("Class-wise Accuracy:")
+        for label in sorted(class_total.keys()):
+            acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
+            print(f"Class {label}: {acc:.2%} ({class_correct[label]}/{class_total[label]})")
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
