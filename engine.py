@@ -43,10 +43,10 @@ class Engine():
         self.visited_domains = set()
 
         #changed 
-        # self.replay_buffer = defaultdict(list)  # key: (domain_id, class_id) → list of samples
-        # self.buffer_size_per_key = args.replay_buffer_size_per_key  # new argument (explained below)
-        # self.buffer_size = args.replay_buffer_size  # Total buffer capacity
-        # self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
+        self.replay_buffer = defaultdict(list)  # key: (domain_id, class_id) → list of samples
+        self.buffer_size_per_key = args.replay_buffer_size_per_key  # new argument (explained below)
+        self.buffer_size = args.replay_buffer_size  # Total buffer capacity
+        self.replay_top_k_percent = args.replay_top_k_percent  # e.g., 0.2 (top 20%)
 
         self.task_num = len(class_mask)
         self.class_group_size = len(class_mask[0])
