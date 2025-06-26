@@ -288,7 +288,7 @@ def split_single_dataset(dataset_train, dataset_val, args):
     custom_tasks = [
        (0, [0, 1, 2]),   # Task 1: Domain 1, 3 classes — strong wide base
        (2, [0, 1, 2]),   # Task 2: Domain 3, 3 classes — early domain shift
-       (0, [3, 4, 5]),   # Task 3: Domain 1, remaining 3 classes — strengthen class coverage
+       (0, [3, 4]),   # Task 3: Domain 1, remaining 3 classes — strengthen class coverage
        (1, [0, 1]),      # Task 4: Domain 2, 2 classes
        (1, [2, 3]),      # Task 5: Domain 2, 2 classes
    ]
