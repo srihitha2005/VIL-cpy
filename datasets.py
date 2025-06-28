@@ -286,12 +286,12 @@ def split_single_dataset(dataset_train, dataset_val, args):
 
     # Define your custom task-to-(domain_id, class_ids) mapping
     custom_tasks = [
-       (0, [0, 1, 2]),   # Task 1: Domain 1, 3 classes — strong wide base
-       (2, [0, 1, 2]),   # Task 2: Domain 3, 3 classes — early domain shift
-       (1, [2]),    # Task 5: Domain 2, 2 classes
-       (0, [3, 4]),   # Task 3: Domain 1, remaining 3 classes — strengthen class coverage
-       (1, [0, 1]),      # Task 4: Domain 2, 2 classes
-   ]
+        (0, [0, 1, 2]),       # Task 1: Domain 1 - Cardiomegaly, Effusion, Infiltration (strong initial base)
+        (1, [1, 2]),          # Task 2: Domain 2 - Pneumonia, Pneumothorax (new domain + new classes)
+        (2, [0, 1, 2]),          # Task 3: Domain 3 - Cardiomegaly, Effusion (same classes, new domain)
+        (0, [3, 4]),          # Task 4: Domain 1 - Nodule, Pneumothorax (complete class coverage in D1)
+        (1, [0, 2]),          # Task 5: Domain 2 - Cardiomegaly, Pneumothorax (revisit familiar classes in new combo)
+    ]
 
  
     split_datasets = []
