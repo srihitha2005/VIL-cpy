@@ -256,7 +256,7 @@ if __name__ == '__main__':
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     # Create parent directory for data_path (because data_path is a file)
-    Path(args.data_path).parent.mkdir(parents=True, exist_ok=True)
+    # Path(args.data_path).parent.mkdir(parents=True, exist_ok=True)
 
     main(args)
 
