@@ -67,7 +67,10 @@ class Engine():
 
         self.task_type="initial"
         self.args=args
-        
+        #changed
+        self.final_all_targets = []
+        self.final_all_preds = []
+
         self.adapter_vec=[]
         self.task_type_list=[]
         self.class_group_list=[]
@@ -393,6 +396,43 @@ class Engine():
     #             label_correct[t] += 1
     #     return label_correct, label_total
 
+    #changed
+    def print_final_results(self):
+        import numpy as np
+        from sklearn.metrics import confusion_matrix
+    
+        all_classes = list(range(5))  # 5 classes: 0, 1, 2, 3, 4
+    
+        y_true = np.array(self.final_all_targets)
+        y_pred = np.array(self.final_all_preds)
+    
+        if len(y_true) == 0 or len(y_pred) == 0:
+            print("No predictions available.")
+            return
+    
+        cm = confusion_matrix(y_true, y_pred, labels=all_classes)
+        print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
+        print(cm)
+    
+        print("\n=== Per-class Accuracy ===")
+        accs = []
+        for idx in all_classes:
+            total = np.sum(y_true == idx)
+            correct = np.sum((y_true == idx) & (y_pred == idx))
+            if total == 0:
+                print(f"Class {idx}: NULL")
+                accs.append(None)
+            else:
+                acc = correct / total
+                print(f"Class {idx}: {acc:.2%} ({correct}/{total})")
+                accs.append(acc)
+    
+        valid_accs = [a for a in accs if a is not None]
+        if valid_accs:
+            avg_acc = np.mean(valid_accs)
+            print(f"\n=== Average Accuracy (used classes): {avg_acc:.2%} ===")
+        else:
+            print("No classes were used.")
     @torch.no_grad()
     def evaluate(self, model: torch.nn.Module, data_loader, 
                 device, task_id=-1, class_mask=None, ema_model=None, args=None,):
@@ -498,12 +538,16 @@ class Engine():
             class_total[t] += 1
             if t == p:
                 class_correct[t] += 1
-        all_classes_seen = sorted(set(self.current_classes))  # Or use self.labels_in_head if you want all possible classes
+        # all_classes_seen = sorted(set(self.current_classes))  # Or use self.labels_in_head if you want all possible classes
 
-        cm = confusion_matrix(all_targets, all_preds, labels=all_classes_seen)
-        print("Confusion Matrix (rows: true, cols: pred):")
-        print(cm)
-
+        # cm = confusion_matrix(all_targets, all_preds, labels=all_classes_seen)
+        # print("Confusion Matrix (rows: true, cols: pred):")
+        # print(cm)
+                    
+        #changed
+        self.final_all_targets.extend(all_targets.tolist())
+        self.final_all_preds.extend(all_preds.tolist())
+                    
         print("Class-wise Accuracy:")
         for label in sorted(class_total.keys()):
             acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
@@ -669,6 +713,7 @@ class Engine():
         
         ema_model = None
         # Each session = (domain_id, list_of_class_indices)
+
         for task_id in range(7):
             # Create new optimizer for each task to clear optimizer status
             if task_id > 0 and args.reinit_optimizer:
@@ -724,4 +769,4 @@ class Engine():
             if args.output_dir and utils.is_main_process():
                 with open(os.path.join(args.output_dir, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) )
-            
+        self.print_final_results()
