@@ -27,6 +27,8 @@ from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from sklearn.metrics import confusion_matrix
+
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):
@@ -496,7 +498,12 @@ class Engine():
             class_total[t] += 1
             if t == p:
                 class_correct[t] += 1
-        
+        all_classes_seen = sorted(set(self.current_classes))  # Or use self.labels_in_head if you want all possible classes
+
+        cm = confusion_matrix(all_targets, all_preds, labels=all_classes_seen)
+        print("Confusion Matrix (rows: true, cols: pred):")
+        print(cm)
+
         print("Class-wise Accuracy:")
         for label in sorted(class_total.keys()):
             acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
