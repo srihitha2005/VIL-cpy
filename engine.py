@@ -628,7 +628,7 @@ class Engine():
     
     
     def pre_train_task(self, model, data_loader, device, task_id, args):
-        
+        epsilon = 1e-8
         self.current_task += 1
         self.current_class_group = int(min(self.class_mask[task_id])/self.class_group_size)
         self.class_group_list.append(self.current_class_group)
@@ -649,7 +649,7 @@ class Engine():
                     count = self.class_group_train_count[self.current_class_group]
                     if count > 0:
                         average_accs = np.sum(self.acc_per_label[self.current_classes, :count], axis=1) / count
-                    thresholds = self.args.gamma*(average_accs - inf_acc) / average_accs
+                    thresholds = self.args.gamma*(average_accs - inf_acc) / (average_accs + epsilon)
                     thresholds = self.tanh(torch.tensor(thresholds)).tolist()
                     thresholds = [round(t,2) if t>self.args.thre else self.args.thre for t in thresholds]
                     print(f"Thresholds for class {self.current_classes[0]}~{self.current_classes[-1]} : {thresholds}")
