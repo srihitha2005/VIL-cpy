@@ -292,7 +292,7 @@ def split_single_dataset(dataset_train, dataset_val, args):
       (2, [0, 1, 2]),        # Task 3: Domain 2 - +Pneumothorax (same domain, class increment)
       (3, [0, 1]),           # Task 4: Domain 3 - Effusion, Infiltration (domain shift)
       (3, [1, 2]),           # Task 5: Domain 3 - Infiltration, Nodule (class increment)
-      (0, [1,3,4])            # Task 6: Domain 0 - Nodule, Pneumothorax (return to D0, complete class coverage)
+      (0, [3,4])            # Task 6: Domain 0 - Nodule, Pneumothorax (return to D0, complete class coverage)
   ]
 
 
