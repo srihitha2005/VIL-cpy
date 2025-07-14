@@ -421,15 +421,16 @@ class Engine():
     
         print("\n=== Per-class Accuracy ===")
         accs = []
-        for label in sorted(self.global_class_stats.keys()):
-            total = self.global_class_stats[label]['total']
-            correct = self.global_class_stats[label]['correct']
-            if total > 0:
-                acc = correct / total
-                accs.append(acc)
-                print(f"Class {label}: {acc:.2%} ({correct}/{total})")
+        for idx in all_classes:
+            total = np.sum(y_true == idx)
+            correct = np.sum((y_true == idx) & (y_pred == idx))
+            if total == 0:
+                print(f"Class {idx}: NULL")
+                accs.append(None)
             else:
-                print(f"Class {label}: NULL")
+                acc = correct / total
+                print(f"Class {idx}: {acc:.2%} ({correct}/{total})")
+                accs.append(acc)
 
     
         valid_accs = [a for a in accs if a is not None]
@@ -553,8 +554,9 @@ class Engine():
         # print(cm)
                     
         #changed
-        self.final_all_targets.extend(all_targets.tolist())
-        self.final_all_preds.extend(all_preds.tolist())
+        if flag_t5 == 1:
+            self.final_all_targets.extend(all_targets.tolist())
+            self.final_all_preds.extend(all_preds.tolist())
                     
         print("Class-wise Accuracy:")
         for label in sorted(class_total.keys()):
