@@ -414,12 +414,10 @@ class Engine():
             print("No predictions available.")
             return
     
-        if hasattr(self, "task5_true") and hasattr(self, "task5_pred"):
-            cm = confusion_matrix(self.task5_true, self.task5_pred, labels=list(range(5)))
-            print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
-            print(cm)
-        else:
-            print("Task 5 labels not found.")
+
+        cm = confusion_matrix(self.task5_true, self.task5_pred, labels=list(range(5)))
+        print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
+        print(cm)
     
         print("\n=== Per-class Accuracy ===")
         accs = []
@@ -442,7 +440,7 @@ class Engine():
             print("No classes were used.")
     @torch.no_grad()
     def evaluate(self, model: torch.nn.Module, data_loader, 
-                device, task_id=-1, class_mask=None, ema_model=None, args=None,):
+                device, task_id=-1, class_mask=None, ema_model=None, args=None,flag_t5 = 0):
         criterion = torch.nn.CrossEntropyLoss()
         all_targets = []
         all_preds = []
@@ -513,9 +511,9 @@ class Engine():
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 _, preds = torch.max(output, 1)
-                # if task_id == 5:
-                self.task5_true.extend(target.cpu().tolist())
-                self.task5_pred.extend(preds.cpu().tolist())
+                if flag_t5 == 1:
+                    self.task5_true.extend(target.cpu().tolist())
+                    self.task5_pred.extend(preds.cpu().tolist())
                 all_targets.extend(target.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
                 metric_logger.meters['Loss'].update(loss.item())
@@ -575,10 +573,12 @@ class Engine():
     def evaluate_till_now(self,model: torch.nn.Module, data_loader, 
                         device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None,):
         stat_matrix = np.zeros((3, args.num_tasks)) # 3 for Acc@1, Acc@5, Loss
-
+        flag_t5 = 0
+        if(task_id == 5):
+            flag_t5 = 1
         for i in range(task_id+1):
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
-                                device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args)
+                                device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5 = flag_t5)
             print(f"\nTesting on Task {i}:")
             print(f"Domain: {self.domain_list[i]}")
             print(f"Classes: {self.class_mask[i]}") 
