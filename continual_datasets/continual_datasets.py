@@ -670,7 +670,7 @@ class OfficeHome(torch.utils.data.Dataset):
 
 
 #CHANGED
-#class_name_to_index = {
+class_name_to_index = {
     "Cardiomegaly": 0,
     "Effusion": 1,
     "Infiltration": 2,
