@@ -414,7 +414,7 @@ class Engine():
             print("No predictions available.")
             return
     
-       if hasattr(self, "task5_true") and hasattr(self, "task5_pred"):
+        if hasattr(self, "task5_true") and hasattr(self, "task5_pred"):
             cm = confusion_matrix(self.task5_true, self.task5_pred, labels=list(range(5)))
             print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
             print(cm)
