@@ -513,9 +513,9 @@ class Engine():
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 _, preds = torch.max(output, 1)
-                if task_id == 5:
-                    self.task5_true.extend(target.cpu().tolist())
-                    self.task5_pred.extend(preds.cpu().tolist())
+                # if task_id == 5:
+                self.task5_true.extend(target.cpu().tolist())
+                self.task5_pred.extend(preds.cpu().tolist())
                 all_targets.extend(target.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
                 metric_logger.meters['Loss'].update(loss.item())
