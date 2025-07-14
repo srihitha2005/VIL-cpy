@@ -562,7 +562,7 @@ class Engine():
         for label in sorted(class_total.keys()):
             acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
             print(f"Class {label}: {acc:.2%} ({class_correct[label]}/{class_total[label]})")
-        if(task_id == 5):
+        if(task_id >0):
             for label in class_total:
                 self.global_class_stats[label]['total'] += class_total[label]
                 self.global_class_stats[label]['correct'] += class_correct[label]
