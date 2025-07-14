@@ -76,7 +76,11 @@ class Engine():
         self.class_group_list=[]
         self.adapter_vec_label=[]
         self.device=device
+        self.global_class_stats = {k: {'total': 0, 'correct': 0} for k in range(5)}
         
+        self.task5_true = []
+        self.task5_pred = []
+        self.global_confusion = {i: {j: 0 for j in range(5)} for i in range(5)}
         if self.args.d_threshold:
             self.acc_per_label = np.zeros((self.args.class_num, self.args.domain_num))
             self.label_train_count = np.zeros((self.args.class_num))
@@ -410,22 +414,25 @@ class Engine():
             print("No predictions available.")
             return
     
-        cm = confusion_matrix(y_true, y_pred, labels=all_classes)
-        print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
-        print(cm)
+       if hasattr(self, "task5_true") and hasattr(self, "task5_pred"):
+            cm = confusion_matrix(self.task5_true, self.task5_pred, labels=list(range(5)))
+            print("\n=== FINAL CONFUSION MATRIX (rows: true, cols: pred) ===")
+            print(cm)
+        else:
+            print("Task 5 labels not found.")
     
         print("\n=== Per-class Accuracy ===")
         accs = []
-        for idx in all_classes:
-            total = np.sum(y_true == idx)
-            correct = np.sum((y_true == idx) & (y_pred == idx))
-            if total == 0:
-                print(f"Class {idx}: NULL")
-                accs.append(None)
-            else:
+        for label in sorted(self.global_class_stats.keys()):
+            total = self.global_class_stats[label]['total']
+            correct = self.global_class_stats[label]['correct']
+            if total > 0:
                 acc = correct / total
-                print(f"Class {idx}: {acc:.2%} ({correct}/{total})")
                 accs.append(acc)
+                print(f"Class {label}: {acc:.2%} ({correct}/{total})")
+            else:
+                print(f"Class {label}: NULL")
+
     
         valid_accs = [a for a in accs if a is not None]
         if valid_accs:
@@ -506,6 +513,9 @@ class Engine():
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 _, preds = torch.max(output, 1)
+                if task_id == 5:
+                    self.task5_true.extend(target.cpu().tolist())
+                    self.task5_pred.extend(preds.cpu().tolist())
                 all_targets.extend(target.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
                 metric_logger.meters['Loss'].update(loss.item())
@@ -552,7 +562,13 @@ class Engine():
         for label in sorted(class_total.keys()):
             acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
             print(f"Class {label}: {acc:.2%} ({class_correct[label]}/{class_total[label]})")
+        if(task_id == 5):
+            for label in class_total:
+                self.global_class_stats[label]['total'] += class_total[label]
+                self.global_class_stats[label]['correct'] += class_correct[label]
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+        
 
 
     @torch.no_grad()
