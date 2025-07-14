@@ -288,9 +288,9 @@ def split_single_dataset(dataset_train, dataset_val, args):
     custom_tasks = [
         (0, [0, 1, 2]),        # Task 0: Domain 0 - Cardiomegaly, Effusion, Infiltration (base task)
         (2, [0, 1]),           # Task 1: Domain 2 - reinforce Cardiomegaly, Effusion (early revisiting)
-        (3, [0, 1, 2]),           # Task 2: Domain 3 - Effusion, Infiltration (gradual domain shift)
-        (2, [0, 1, 2]),        # Task 3: Domain 2 - +Pneumothorax (incremental class + revisit)
-        (1, [0, 1]),           # Task 4: Domain 1 - Cardiomegaly, Pneumothorax (more class 4 samples)
+        (3, [1, 2, 3]),           # Task 2: Domain 3 - Effusion, Infiltration (gradual domain shift)
+        (2, [0, 1, 4]),        # Task 3: Domain 2 - +Pneumothorax (incremental class + revisit)
+        (1, [0, 4]),           # Task 4: Domain 1 - Cardiomegaly, Pneumothorax (more class 4 samples)
         (0, [3, 4])            # Task 6: Domain 0 - Nodule, Pneumothorax (final revisit for full class coverage)
     ]
 
