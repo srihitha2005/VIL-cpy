@@ -668,7 +668,16 @@ class OfficeHome(torch.utils.data.Dataset):
                 return self.data[i][index]
             index -= l
 
-#changed
+
+#CHANGED
+#class_name_to_index = {
+    "Cardiomegaly": 0,
+    "Effusion": 1,
+    "Infiltration": 2,
+    "Nodule": 3,
+    "Pneumothorax": 4
+}
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None):
         self.root = os.path.expanduser(root)
@@ -676,29 +685,39 @@ class Dataset(torch.utils.data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.mode = 'vil'
-        self.classes = 6
+        self.classes = 5
         self.data_path = os.path.join(self.root, 'train' if self.train else 'test')
 
         if not os.path.exists(self.data_path):
             raise RuntimeError(f"{self.data_path} not found. Make sure train/test structure exists.")
 
-        # print("Data Path : ",self.data_path)
-        # Get domains like 'domain1', 'domain2', etc.
         self.domains = sorted([d for d in os.listdir(self.data_path) if os.path.isdir(os.path.join(self.data_path, d))])
 
-        # print("Domains: ",self.domains)
+        def patched_imagefolder(path, transform=None):
+            # Patch ImageFolder so that class_to_idx is always as per your mapping
+            dataset = datasets.ImageFolder(path, transform=transform)
+            # Force class_to_idx
+            dataset.class_to_idx = class_name_to_index
+            # Rebuild samples with new label mapping
+            new_samples = []
+            for path, _ in dataset.samples:
+                class_name = os.path.basename(os.path.dirname(path))
+                if class_name in class_name_to_index:
+                    new_samples.append((path, class_name_to_index[class_name]))
+            dataset.samples = new_samples
+            dataset.targets = [label for _, label in new_samples]
+            return dataset
+
         if self.mode in ['cil', 'joint']:
             # Combine all domains into one dataset (for CIL)
-            combined_path = []
-            for domain in self.domains:
-                combined_path.append(os.path.join(self.data_path, domain))
-            self.data = datasets.ImageFolder(root=os.path.join(self.data_path, self.domains[0]), transform=self.transform)
+            self.data = patched_imagefolder(os.path.join(self.data_path, self.domains[0]), transform=self.transform)
             for domain in self.domains[1:]:
-                self.data.samples.extend(datasets.ImageFolder(os.path.join(self.data_path, domain)).samples)
-                self.data.targets.extend(datasets.ImageFolder(os.path.join(self.data_path, domain)).targets)
+                domain_dataset = patched_imagefolder(os.path.join(self.data_path, domain))
+                self.data.samples.extend(domain_dataset.samples)
+                self.data.targets.extend(domain_dataset.targets)
         else:
             # Keep data domain-wise
-            self.data = [datasets.ImageFolder(os.path.join(self.data_path, d), transform=self.transform) for d in self.domains]
+            self.data = [patched_imagefolder(os.path.join(self.data_path, d), transform=self.transform) for d in self.domains]
 
     def __getitem__(self, index):
         if isinstance(self.data, list):  # domain-wise
