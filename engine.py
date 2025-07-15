@@ -578,6 +578,7 @@ class Engine():
         flag_t5 = 0
         if(task_id == 4):
             flag_t5 = 1
+        print("======Flag Task 4 flag : ",flag_t5)
         for i in range(task_id+1):
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
                                 device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5 = flag_t5)
