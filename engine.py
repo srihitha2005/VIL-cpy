@@ -576,7 +576,7 @@ class Engine():
                         device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None,):
         stat_matrix = np.zeros((3, args.num_tasks)) # 3 for Acc@1, Acc@5, Loss
         flag_t5 = 0
-        if(task_id == 5):
+        if(task_id == 4):
             flag_t5 = 1
         for i in range(task_id+1):
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
