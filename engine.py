@@ -385,8 +385,8 @@ class Engine():
            
             acc1, acc5 = accuracy(logits, target, topk=(1, 5))
 
-            if not math.isfinite(loss.item()):
-                print("Loss is {}, ".format(loss.item()))
+            # if not math.isfinite(loss.item()):
+            #     print("Loss is {}, ".format(loss.item()))
                 # sys.exit(1)
             if self.current_task == 0:
                 for param in model.parameters():
