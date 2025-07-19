@@ -132,7 +132,7 @@ class Engine():
             all_samples = all_samples[:self.buffer_per_class]
             # Re-distribute among domains
             n_domains = self.num_domains_per_class[class_id]
-            per_domain_quota = self.buffer_per_class // n_domains
+            per_domain_quota = 400
             idx = 0
             for k in all_keys:
                 self.replay_buffer[k] = all_samples[idx:idx+per_domain_quota]
