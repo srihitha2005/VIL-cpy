@@ -71,6 +71,11 @@ class Engine():
         self.final_all_targets = []
         self.final_all_preds = []
 
+        #replay
+        self.buffer_size = args.replay_buffer_size
+        self.seen_classes = set()
+        self.num_domains_per_class = defaultdict(lambda: 0)
+        
         self.adapter_vec=[]
         self.task_type_list=[]
         self.class_group_list=[]
@@ -789,3 +794,40 @@ class Engine():
                 with open(os.path.join(args.output_dir, '{}_stats.txt'.format(datetime.datetime.now().strftime('log_%Y_%m_%d_%H_%M'))), 'a') as f:
                     f.write(json.dumps(log_stats) )
         self.print_final_results()
+        def _update_buffer_quota(self):
+            """Update quota for each class to maintain fixed total buffer size."""
+            self.num_classes_seen = len(self.seen_classes)  # set of all class_ids seen so far
+            if self.num_classes_seen == 0:
+                return
+            self.buffer_per_class = self.buffer_size // self.num_classes_seen
+        
+        def _collect_buffer_samples(self, class_id, domain_id, samples):
+            """Save samples to buffer for (class, domain)."""
+            key = (class_id, domain_id)
+            if key not in self.replay_buffer:
+                self.replay_buffer[key] = []
+            # How many slots for this (class, domain)?
+            per_domain_quota = self.buffer_per_class // self.num_domains_per_class[class_id]
+            # Add new samples
+            self.replay_buffer[key].extend(samples)
+            # Trim to per-domain quota
+            if len(self.replay_buffer[key]) > per_domain_quota:
+                self.replay_buffer[key] = self.replay_buffer[key][:per_domain_quota]
+        
+        def _rebalance_buffer(self):
+            # For each class, collect all (class, *) buffers, trim to buffer_per_class
+            for class_id in self.seen_classes:
+                all_keys = [k for k in self.replay_buffer if k[0] == class_id]
+                all_samples = []
+                for k in all_keys:
+                    all_samples.extend(self.replay_buffer[k])
+                # Shuffle and trim
+                random.shuffle(all_samples)
+                all_samples = all_samples[:self.buffer_per_class]
+                # Re-distribute among domains
+                n_domains = self.num_domains_per_class[class_id]
+                per_domain_quota = self.buffer_per_class // n_domains
+                idx = 0
+                for k in all_keys:
+                    self.replay_buffer[k] = all_samples[idx:idx+per_domain_quota]
+                    idx += per_domain_quota
