@@ -277,19 +277,19 @@ class Engine():
             target = target.to(device, non_blocking=True)
 
             #Replay
-            # --- Replay buffer: Add replay samples to current batch ---
-            all_buffer_samples = []
-            for key in self.replay_buffer:
-                all_buffer_samples.extend(self.replay_buffer[key])
-            if len(all_buffer_samples) > 0:
-                N = min(self.args.replay_batch_size, len(all_buffer_samples))
-                replay_samples = random.sample(all_buffer_samples, N)
-                replay_inputs, replay_targets, _ = zip(*replay_samples)
-                replay_inputs = torch.stack(replay_inputs).to(device)
-                replay_targets = torch.stack(replay_targets).to(device)
-                input = torch.cat([input, replay_inputs], dim=0)
-                target = torch.cat([target, replay_targets], dim=0)
-            # -----------------------------------------------------------
+            # # --- Replay buffer: Add replay samples to current batch ---
+            # all_buffer_samples = []
+            # for key in self.replay_buffer:
+            #     all_buffer_samples.extend(self.replay_buffer[key])
+            # if len(all_buffer_samples) > 0:
+            #     N = min(self.args.replay_batch_size, len(all_buffer_samples))
+            #     replay_samples = random.sample(all_buffer_samples, N)
+            #     replay_inputs, replay_targets, _ = zip(*replay_samples)
+            #     replay_inputs = torch.stack(replay_inputs).to(device)
+            #     replay_targets = torch.stack(replay_targets).to(device)
+            #     input = torch.cat([input, replay_inputs], dim=0)
+            #     target = torch.cat([target, replay_targets], dim=0)
+            # # -----------------------------------------------------------
             output = model(input) # (bs, class + n)
             distill_loss=0
             if self.distill_head is not None:
