@@ -113,7 +113,7 @@ class Engine():
         if key not in self.replay_buffer:
             self.replay_buffer[key] = []
         # How many slots for this (class, domain)?
-        per_domain_quota = self.buffer_per_class // self.num_domains_per_class[class_id]
+        per_domain_quota = 400
         # Add new samples
         self.replay_buffer[key].extend(samples)
         # Trim to per-domain quota
