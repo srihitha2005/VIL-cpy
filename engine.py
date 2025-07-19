@@ -238,6 +238,21 @@ class Engine():
                     break
             input = input.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
+
+            #Replay
+            # --- Replay buffer: Add replay samples to current batch ---
+            all_buffer_samples = []
+            for key in self.replay_buffer:
+                all_buffer_samples.extend(self.replay_buffer[key])
+            if len(all_buffer_samples) > 0:
+                N = min(self.args.replay_batch_size, len(all_buffer_samples))
+                replay_samples = random.sample(all_buffer_samples, N)
+                replay_inputs, replay_targets, _ = zip(*replay_samples)
+                replay_inputs = torch.stack(replay_inputs).to(device)
+                replay_targets = torch.stack(replay_targets).to(device)
+                input = torch.cat([input, replay_inputs], dim=0)
+                target = torch.cat([target, replay_targets], dim=0)
+            # -----------------------------------------------------------
             output = model(input) # (bs, class + n)
             distill_loss=0
             if self.distill_head is not None:
@@ -349,6 +364,25 @@ class Engine():
             loss.backward(retain_graph=False)
             optimizer.step()
 
+            #Replay
+            # --- Add new samples to replay buffer ---
+            for i in range(input.size(0)):
+                # Only add non-replay samples (from the current batch), not replayed ones
+                if i >= input.size(0) - getattr(self.args, "replay_batch_size", 0):
+                    break  # skip the replayed samples
+                class_id = target[i].item()
+                # If you track domain per task, use task_id, else use your domain logic
+                domain_id = task_id
+                score = self.compute_sample_score(model, input[i], target[i])
+                sample = (input[i].detach().cpu(), target[i].detach().cpu(), score)
+                # Update seen_classes and buffer quota if new
+                if class_id not in self.seen_classes:
+                    self.seen_classes.add(class_id)
+                    self._update_buffer_quota()
+                self._collect_buffer_samples(class_id, domain_id, [sample])
+            
+            self._rebalance_buffer()
+            # -------------------------------------------
 
             # #Changed
             # #print("Input : ",input.shape)
