@@ -351,8 +351,8 @@ def build_transform(is_train, args):
         transform = transforms.Compose([
             transforms.Resize(224),
             # transforms.RandomResizedCrop(224),
-            # transforms.RandomHorizontalFlip(),
-            # transforms.RandomRotation(10),  # slight rotation
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(10),  # slight rotation
             transforms.ColorJitter(brightness=0.2, contrast=0.2),
             transforms.Grayscale(num_output_channels=3),  # convert grayscale to 3 channels if needed
             transforms.ToTensor(),
