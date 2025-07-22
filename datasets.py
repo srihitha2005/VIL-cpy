@@ -349,10 +349,10 @@ def build_vil_scenario(dataset_train, dataset_val, args):
 def build_transform(is_train, args):
     if is_train:
         transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(10),  # slight rotation
+            transforms.Resize(224),
+            # transforms.RandomResizedCrop(224),
+            # transforms.RandomHorizontalFlip(),
+            # transforms.RandomRotation(10),  # slight rotation
             transforms.ColorJitter(brightness=0.2, contrast=0.2),
             transforms.Grayscale(num_output_channels=3),  # convert grayscale to 3 channels if needed
             transforms.ToTensor(),
@@ -360,8 +360,8 @@ def build_transform(is_train, args):
         ])
     else:
         transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+            transforms.Resize(224),
+            # transforms.CenterCrop(224),
             transforms.Grayscale(num_output_channels=3),  # same here
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
