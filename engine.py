@@ -104,6 +104,9 @@ class Engine():
         self.all_task_targets = []
         self.all_task_preds = []
         self.all_task_domains = []
+        self.domain_acc_history = defaultdict(lambda: defaultdict(list))  # For domain forgetting
+        self.class_acc_history = defaultdict(lambda: defaultdict(list))   # For class forgetting
+
     #changed
     @torch.no_grad()
     def compute_sample_score(self, model, input, target):
@@ -527,9 +530,10 @@ class Engine():
             print(f"\n=== Average Accuracy (used classes): {avg_acc:.2%} ===")
         else:
             print("No classes were used.")
+    
     @torch.no_grad()
     def evaluate(self, model: torch.nn.Module, data_loader, 
-            device, task_id=-1, class_mask=None, ema_model=None, args=None, flag_t5=0):
+                device, task_id=-1, class_mask=None, ema_model=None, args=None, flag_t5=0):
         criterion = torch.nn.CrossEntropyLoss()
         all_targets = []
         all_preds = []
@@ -614,6 +618,19 @@ class Engine():
         task_acc = metric_logger.meters['Acc@1'].global_avg
         self.task_acc_history[task_id][self.current_task].append(task_acc)
         
+        # Store domain and class accuracies for forgetting analysis
+        domain_correct = sum(self.domain_class_stats[task_id][c]['correct'] for c in range(5))
+        domain_total = sum(self.domain_class_stats[task_id][c]['total'] for c in range(5))
+        if domain_total > 0:
+            domain_acc = domain_correct / domain_total
+            self.domain_acc_history[task_id][self.current_task].append(domain_acc)
+        
+        for class_id in range(5):
+            stats = self.domain_class_stats[task_id][class_id]
+            if stats['total'] > 0:
+                class_acc = stats['correct'] / stats['total']
+                self.class_acc_history[class_id][self.current_task].append(class_acc)
+        
         all_targets = np.array(all_targets)
         all_preds = np.array(all_preds)
         all_domains = np.array(all_domains)
@@ -635,10 +652,9 @@ class Engine():
             self.all_task_domains.extend(all_domains.tolist())
                         
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-            
 
     def print_comprehensive_metrics_after_task(self, current_task_id):
-        """Print comprehensive metrics after each task"""
+    """Print comprehensive metrics after each task"""
         from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
         import numpy as np
         
@@ -660,18 +676,38 @@ class Engine():
             overall_acc = total_correct / total_samples if total_samples > 0 else 0
             print(f"Overall Accuracy: {overall_acc:.4f}")
         
-        # 2. Per-class metrics (Precision, Recall, F1, Sensitivity)
-        print("\n=== PER-CLASS METRICS ===")
+        # 2. Comprehensive Per-class metrics 
+        print("\n=== COMPREHENSIVE PER-CLASS METRICS ===")
         if len(self.all_task_targets) > 0:
             precision, recall, f1, support = precision_recall_fscore_support(
                 self.all_task_targets, self.all_task_preds, labels=list(range(5)), average=None, zero_division=0
             )
             
+            # Calculate additional metrics manually from confusion matrix
+            cm = confusion_matrix(self.all_task_targets, self.all_task_preds, labels=list(range(5)))
+            
             for class_id in range(5):
                 if support[class_id] > 0:
-                    sensitivity = recall[class_id]  # Sensitivity = Recall
+                    # Basic metrics
+                    sensitivity = recall[class_id]  # Sensitivity = Recall = TP/(TP+FN)
+                    
+                    # Calculate specificity: TN/(TN+FP)
+                    tp = cm[class_id, class_id]
+                    fp = cm[:, class_id].sum() - tp  # False positives
+                    fn = cm[class_id, :].sum() - tp  # False negatives
+                    tn = cm.sum() - tp - fp - fn     # True negatives
+                    
+                    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+                    
+                    # NPV (Negative Predictive Value): TN/(TN+FN)
+                    npv = tn / (tn + fn) if (tn + fn) > 0 else 0
+                    
+                    # PPV (Positive Predictive Value) = Precision
+                    ppv = precision[class_id]
+                    
                     print(f"Class {class_id}: Precision={precision[class_id]:.4f}, Recall={recall[class_id]:.4f}, "
-                          f"F1={f1[class_id]:.4f}, Sensitivity={sensitivity:.4f}, Support={support[class_id]}")
+                          f"F1={f1[class_id]:.4f}, Sensitivity={sensitivity:.4f}, Specificity={specificity:.4f}, "
+                          f"PPV={ppv:.4f}, NPV={npv:.4f}, Support={support[class_id]}")
                 else:
                     print(f"Class {class_id}: No samples yet")
         
@@ -725,43 +761,106 @@ class Engine():
             avg_per_class_acc = np.mean(class_accs)
             print(f"Average Per-Class Accuracy: {avg_per_class_acc:.4f}")
         
-        # 7. Forward and Backward Transfer
+        # 7. Forward and Backward Transfer Analysis
         if current_task_id > 0:
-            print("\n=== TRANSFER METRICS ===")
+            print("\n=== TRANSFER ANALYSIS ===")
             
-            # Forward Transfer: How much learning previous tasks helped with current task
-            if len(self.task_acc_history[current_task_id][current_task_id]) > 0:
-                current_task_acc = self.task_acc_history[current_task_id][current_task_id][-1]
-                print(f"Current task ({current_task_id}) accuracy: {current_task_acc:.4f}")
+            # Task-level Forward Transfer
+            print("\n--- Task-level Forward Transfer ---")
+            forward_transfers = []
+            for task in range(1, current_task_id + 1):
+                if task in self.task_acc_history and current_task_id in self.task_acc_history[task]:
+                    if len(self.task_acc_history[task][current_task_id]) > 0:
+                        current_perf = self.task_acc_history[task][current_task_id][-1]
+                        # Compare with a baseline (could be random performance or first task performance)
+                        baseline_perf = 0.2  # Assuming 5-class problem, random = 20%
+                        forward_transfer = current_perf - baseline_perf
+                        forward_transfers.append(forward_transfer)
+                        print(f"Task {task} forward transfer: {forward_transfer:.4f}")
             
-            # Backward Transfer: How much current task affected previous tasks
+            if forward_transfers:
+                avg_forward_transfer = np.mean(forward_transfers)
+                print(f"Average Forward Transfer: {avg_forward_transfer:.4f}")
+            
+            # Task-level Backward Transfer  
+            print("\n--- Task-level Backward Transfer ---")
             backward_transfers = []
             for prev_task in range(current_task_id):
-                if len(self.task_acc_history[prev_task]) >= 2:
-                    # Compare performance on previous task before and after current task
-                    prev_accs = [acc_list[-1] for acc_list in self.task_acc_history[prev_task].values()]
-                    if len(prev_accs) >= 2:
-                        backward_transfer = prev_accs[-1] - prev_accs[prev_task]
+                if (prev_task in self.task_acc_history and 
+                    prev_task in self.task_acc_history[prev_task] and 
+                    current_task_id in self.task_acc_history[prev_task]):
+                    
+                    task_accs = self.task_acc_history[prev_task]
+                    if (len(task_accs[prev_task]) > 0 and len(task_accs[current_task_id]) > 0):
+                        initial_perf = task_accs[prev_task][-1]  # Performance right after learning prev_task
+                        current_perf = task_accs[current_task_id][-1]  # Performance after learning current task
+                        backward_transfer = current_perf - initial_perf
                         backward_transfers.append(backward_transfer)
-                        print(f"Backward transfer for Task {prev_task}: {backward_transfer:.4f}")
+                        print(f"Task {prev_task} backward transfer: {backward_transfer:.4f}")
             
             if backward_transfers:
                 avg_backward_transfer = np.mean(backward_transfers)
                 print(f"Average Backward Transfer: {avg_backward_transfer:.4f}")
         
-        # 8. Forgetting Analysis
+        # 8. Comprehensive Forgetting Analysis
         if current_task_id > 0:
-            print("\n=== FORGETTING ANALYSIS ===")
+            print("\n=== COMPREHENSIVE FORGETTING ANALYSIS ===")
             
             # Task-wise forgetting
+            print("\n--- Task-wise Forgetting ---")
+            task_forgettings = []
             for prev_task in range(current_task_id):
-                if prev_task in self.task_acc_history and len(self.task_acc_history[prev_task]) > 1:
-                    accs = [acc_list[-1] if acc_list else 0 for acc_list in self.task_acc_history[prev_task].values()]
-                    if len(accs) >= 2:
-                        max_acc = max(accs)
-                        current_acc = accs[-1]
+                if (prev_task in self.task_acc_history and 
+                    len(self.task_acc_history[prev_task]) > 1):
+                    
+                    task_accs = self.task_acc_history[prev_task]
+                    accs_list = []
+                    for task_eval in sorted(task_accs.keys()):
+                        if len(task_accs[task_eval]) > 0:
+                            accs_list.append(task_accs[task_eval][-1])
+                    
+                    if len(accs_list) >= 2:
+                        max_acc = max(accs_list)
+                        current_acc = accs_list[-1]
                         forgetting = max_acc - current_acc
+                        task_forgettings.append(forgetting)
                         print(f"Task {prev_task} forgetting: {forgetting:.4f} (max: {max_acc:.4f}, current: {current_acc:.4f})")
+            
+            if task_forgettings:
+                avg_task_forgetting = np.mean(task_forgettings)
+                print(f"Average Task Forgetting: {avg_task_forgetting:.4f}")
+            
+            # Domain-wise forgetting
+            print("\n--- Domain-wise Forgetting ---")
+            for domain_id in range(current_task_id):
+                domain_accs = []
+                for eval_task in range(domain_id, current_task_id + 1):
+                    domain_correct = sum(self.domain_class_stats[domain_id][c]['correct'] for c in range(5))
+                    domain_total = sum(self.domain_class_stats[domain_id][c]['total'] for c in range(5))
+                    if domain_total > 0:
+                        domain_accs.append(domain_correct / domain_total)
+                
+                if len(domain_accs) >= 2:
+                    max_acc = max(domain_accs)
+                    current_acc = domain_accs[-1]
+                    domain_forgetting = max_acc - current_acc
+                    print(f"Domain {domain_id} forgetting: {domain_forgetting:.4f}")
+            
+            # Class-wise forgetting
+            print("\n--- Class-wise Forgetting ---")
+            for class_id in range(5):
+                class_accs_over_time = []
+                for eval_task in range(current_task_id + 1):
+                    total_correct = sum(self.domain_class_stats[d][class_id]['correct'] for d in range(eval_task + 1))
+                    total_samples = sum(self.domain_class_stats[d][class_id]['total'] for d in range(eval_task + 1))
+                    if total_samples > 0:
+                        class_accs_over_time.append(total_correct / total_samples)
+                
+                if len(class_accs_over_time) >= 2:
+                    max_acc = max(class_accs_over_time)
+                    current_acc = class_accs_over_time[-1]
+                    class_forgetting = max_acc - current_acc
+                    print(f"Class {class_id} forgetting: {class_forgetting:.4f}")
         
         print(f"\n{'='*80}")
         print(f"END OF METRICS FOR TASK {current_task_id + 1}")
