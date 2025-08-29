@@ -289,17 +289,17 @@ def split_single_dataset(dataset_train, dataset_val, args):
         (0, [0, 1, 2]),          # Task 0 (Base): Domain 0 - Initial exposure to Cardiomegaly, Effusion, Infiltration.
                                  # This is crucial as D0 supports all problematic classes.
     
-        (3, [1, 2, 3]),          # Task 1 (Reinforce & New Domain): Domain 3 - Focus on reinforcing Effusion and Infiltration.
+        (0, [3,4]),          # Task 1 (Reinforce & New Domain): Domain 3 - Focus on reinforcing Effusion and Infiltration.
                                  # Introduce Nodule (Class 3) in a new domain, providing a fresh context for C1 & C2.
     
-        (2, [0, 1, 4]),          # Task 2 (New Domain & Class): Domain 2 - Introduce Pneumothorax (Class 4),
+        (1, [0, 4]),          # Task 2 (New Domain & Class): Domain 2 - Introduce Pneumothorax (Class 4),
                                  # and revisit Cardiomegaly (Class 0) and Effusion (Class 1) in this new domain.
                                  # This helps generalize C1 across domains.
     
-        (1, [0, 4]),            # Task 3 (Domain Shift & Reinforce): Domain 1 - Further reinforce Cardiomegaly (Class 0)
+        (2, [0,1, 4]),            # Task 3 (Domain Shift & Reinforce): Domain 1 - Further reinforce Cardiomegaly (Class 0)
                                  # and Pneumothorax (Class 4) in a domain with limited class overlap.
     
-        (0, [0, 1, 2, 3, 4])    # Task 4 (Consolidation & Full Coverage): Domain 0 - Final comprehensive task with ALL
+        (3, [1, 2, 3])    # Task 4 (Consolidation & Full Coverage): Domain 0 - Final comprehensive task with ALL
                                  # available classes in Domain 0. This consolidates learning and ensures the model
                                  # has seen all classes together within a single domain, which is crucial for
                                  # establishing full class relationships and for spectral regularization to work on
