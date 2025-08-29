@@ -32,6 +32,7 @@ from sklearn.metrics import confusion_matrix
 
 class Engine():
     def __init__(self, model=None,device=None,class_mask=[], domain_list= [], args=None):
+        
         self.current_task=0
         self.current_classes=[]
         #! distillation
@@ -92,6 +93,17 @@ class Engine():
             self.tanh = torch.nn.Tanh()
             
         self.cs=torch.nn.CosineSimilarity(dim=1,eps=1e-6)
+        
+        # New variables to keep track of metrics
+        #changed
+        self.domain_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
+        self.task_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
+        self.domain_confusion = defaultdict(lambda: {i: {j: 0 for j in range(5)} for i in range(5)})
+        self.task_confusion = defaultdict(lambda: {i: {j: 0 for j in range(5)} for i in range(5)})
+        self.task_acc_history = defaultdict(lambda: defaultdict(list))  # For forgetting analysis
+        self.all_task_targets = []
+        self.all_task_preds = []
+        self.all_task_domains = []
     #changed
     @torch.no_grad()
     def compute_sample_score(self, model, input, target):
@@ -516,175 +528,291 @@ class Engine():
         else:
             print("No classes were used.")
     @torch.no_grad()
-    def evaluate(self, model: torch.nn.Module, data_loader, 
-                device, task_id=-1, class_mask=None, ema_model=None, args=None,flag_t5 = 0):
-        criterion = torch.nn.CrossEntropyLoss()
-        all_targets = []
-        all_preds = []
+def evaluate(self, model: torch.nn.Module, data_loader, 
+            device, task_id=-1, class_mask=None, ema_model=None, args=None, flag_t5=0):
+    criterion = torch.nn.CrossEntropyLoss()
+    all_targets = []
+    all_preds = []
+    all_domains = []
 
-        metric_logger = utils.MetricLogger(delimiter="  ")
-        header = 'Test: [Task {}]'.format(task_id + 1)
-                    
-        # switch to evaluation mode
-        model.eval()
-
-        correct_sum, total_sum = 0,0
-        label_correct, label_total = np.zeros((self.class_group_size)), np.zeros((self.class_group_size))
-        with torch.no_grad():
-            for batch_idx,(input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
-                if args.develop:
-                    if batch_idx>20:
-                        break
+    metric_logger = utils.MetricLogger(delimiter="  ")
+    header = 'Test: [Task {}]'.format(task_id + 1)
                 
-                input = input.to(device, non_blocking=True)
-                target = target.to(device, non_blocking=True)
-                
+    # switch to evaluation mode
+    model.eval()
 
-                # changed
-                # if len(self.replay_buffer) > 0:
-                #     # Flatten buffer
-                #     all_replay_samples = []
-                #     for key in self.replay_buffer:
-                #         all_replay_samples.extend(self.replay_buffer[key])
-                    
-                #     # Sample
-                #     replay_samples = random.sample(
-                #         all_replay_samples, 
-                #         min(len(all_replay_samples), args.replay_batch_size)
-                #     )
-                    
-                #     # Unpack inputs and targets
-                #     replay_inputs, replay_targets = zip(*[(x[0], x[1]) for x in replay_samples])
-                    
-                #     # Stack tensors
-                #     replay_inputs = torch.stack(replay_inputs).to(device)
-                #     replay_targets = torch.stack(replay_targets).to(device)
-                    
-                #     # Concatenate replay with current batch
-                #     input = torch.cat([input, replay_inputs], dim=0)
-                #     target = torch.cat([target, replay_targets], dim=0)
-
-                # compute output            
+    correct_sum, total_sum = 0, 0
+    label_correct, label_total = np.zeros((self.class_group_size)), np.zeros((self.class_group_size))
+    
+    with torch.no_grad():
+        for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+            if args.develop:
+                if batch_idx > 20:
+                    break
+            
+            input = input.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
+            output = model(input)
+            
+            output, correct, total = self.get_max_label_logits(output, class_mask[task_id], task_id=task_id, target=target, slice=True) 
+            output_ema = [output.softmax(dim=1)]
+            correct_sum += correct
+            total_sum += total
+            
+            if ema_model is not None:
+                tmp_adapter = model.get_adapter()
+                model.put_adapter(ema_model.module)
                 output = model(input)
+                output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=True) 
+                output_ema.append(output.softmax(dim=1))
+                model.put_adapter(tmp_adapter)
+            
+            output = torch.stack(output_ema, dim=-1).max(dim=-1)[0]
+            loss = criterion(output, target)
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            _, preds = torch.max(output, 1)
+            
+            # Store predictions and targets
+            all_targets.extend(target.cpu().tolist())
+            all_preds.extend(preds.cpu().tolist())
+            all_domains.extend([task_id] * len(target))  # Domain is task_id
+            
+            # Update domain-class and task-class stats
+            for t, p in zip(target.cpu().tolist(), preds.cpu().tolist()):
+                # Domain-class stats
+                self.domain_class_stats[task_id][t]['total'] += 1
+                if t == p:
+                    self.domain_class_stats[task_id][t]['correct'] += 1
                 
-                output, correct, total = self.get_max_label_logits(output, class_mask[task_id],task_id=task_id, target=target,slice=True) 
-                output_ema = [output.softmax(dim=1)]
-                correct_sum+=correct
-                total_sum+=total
+                # Task-class stats  
+                self.task_class_stats[task_id][t]['total'] += 1
+                if t == p:
+                    self.task_class_stats[task_id][t]['correct'] += 1
                 
-                if ema_model is not None:
-                    tmp_adapter = model.get_adapter()
-                    model.put_adapter(ema_model.module)
-                    output = model(input)
-                    output,_,_ = self.get_max_label_logits(output, class_mask[task_id],slice=True) 
-                    output_ema.append(output.softmax(dim=1))
-                    model.put_adapter(tmp_adapter)
-                
-                output = torch.stack(output_ema, dim=-1).max(dim=-1)[0]
-                loss = criterion(output, target)
-                
-                # if self.args.d_threshold and self.current_task +1 != self.args.num_tasks and self.current_task == task_id:
-                #     label_correct, label_total = self.update_acc_per_label(label_correct, label_total, output, target)
-                acc1, acc5 = accuracy(output, target, topk=(1, 5))
-                acc1, acc5 = accuracy(output, target, topk=(1, 5))
-                _, preds = torch.max(output, 1)
-                if flag_t5 == 1:
-                    self.task5_true.extend(target.cpu().tolist())
-                    self.task5_pred.extend(preds.cpu().tolist())
-                all_targets.extend(target.cpu().tolist())
-                all_preds.extend(preds.cpu().tolist())
-                metric_logger.meters['Loss'].update(loss.item())
-                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
-                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
-            if total_sum>0:
-                print(f"Max Pooling acc: {correct_sum/total_sum}")
-                
-            if self.args.d_threshold and task_id == self.current_task:
-                domain_idx = int(self.label_train_count[self.current_classes][0])
-                self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
-                print(self.label_train_count)
-                print(self.acc_per_label)
+                # Update confusion matrices
+                self.domain_confusion[task_id][t][p] += 1
+                self.task_confusion[task_id][t][p] += 1
+            
+            if flag_t5 == 1:
+                self.task5_true.extend(target.cpu().tolist())
+                self.task5_pred.extend(preds.cpu().tolist())
+            
+            metric_logger.meters['Loss'].update(loss.item())
+            metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+            metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+            
+        if total_sum > 0:
+            print(f"Max Pooling acc: {correct_sum/total_sum}")
+            
+        if self.args.d_threshold and task_id == self.current_task:
+            domain_idx = int(self.label_train_count[self.current_classes][0])
+            self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
+            print(self.label_train_count)
+            print(self.acc_per_label)
 
-        # gather the stats from all processes
-        all_targets = np.array(all_targets)
-        all_preds = np.array(all_preds)
-        precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro')
-        metric_logger.synchronize_between_processes()
-        # Print unified statement
-        print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
-              .format(top1=metric_logger.meters['Acc@1'].global_avg, 
-                      loss=metric_logger.meters['Loss'].global_avg,
-                      precision=precision, recall=recall, f1=f1))
-        
-        # Accumulate per-class correct and total
-        class_correct = Counter()
-        class_total = Counter()
-        for t, p in zip(all_targets, all_preds):
-            class_total[t] += 1
-            if t == p:
-                class_correct[t] += 1
-        # all_classes_seen = sorted(set(self.current_classes))  # Or use self.labels_in_head if you want all possible classes
-
-        # cm = confusion_matrix(all_targets, all_preds, labels=all_classes_seen)
-        # print("Confusion Matrix (rows: true, cols: pred):")
-        # print(cm)
+    # Store task accuracy for forgetting analysis
+    task_acc = metric_logger.meters['Acc@1'].global_avg
+    self.task_acc_history[task_id][self.current_task].append(task_acc)
+    
+    all_targets = np.array(all_targets)
+    all_preds = np.array(all_preds)
+    all_domains = np.array(all_domains)
+    
+    precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro', zero_division=0)
+    
+    metric_logger.synchronize_between_processes()
+    print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
+          .format(top1=metric_logger.meters['Acc@1'].global_avg, 
+                  loss=metric_logger.meters['Loss'].global_avg,
+                  precision=precision, recall=recall, f1=f1))
+    
+    # Store for global analysis
+    if flag_t5 == 1:
+        self.final_all_targets.extend(all_targets.tolist())
+        self.final_all_preds.extend(all_preds.tolist())
+        self.all_task_targets.extend(all_targets.tolist())
+        self.all_task_preds.extend(all_preds.tolist())
+        self.all_task_domains.extend(all_domains.tolist())
                     
-        #changed
-        if flag_t5 == 1:
-            self.final_all_targets.extend(all_targets.tolist())
-            self.final_all_preds.extend(all_preds.tolist())
-                    
-        print("Class-wise Accuracy:")
-        for label in sorted(class_total.keys()):
-            acc = class_correct[label] / class_total[label] if class_total[label] > 0 else 0
-            print(f"Class {label}: {acc:.2%} ({class_correct[label]}/{class_total[label]})")
-        if(task_id >0):
-            for label in class_total:
-                self.global_class_stats[label]['total'] += class_total[label]
-                self.global_class_stats[label]['correct'] += class_correct[label]
-        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
         
 
-
-    @torch.no_grad()
-    def evaluate_till_now(self,model: torch.nn.Module, data_loader, 
-                        device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None,):
-        stat_matrix = np.zeros((3, args.num_tasks)) # 3 for Acc@1, Acc@5, Loss
+    def print_comprehensive_metrics_after_task(self, current_task_id):
+        """Print comprehensive metrics after each task"""
+        from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+        import numpy as np
+        
+        print(f"\n{'='*80}")
+        print(f"COMPREHENSIVE METRICS AFTER TASK {current_task_id + 1}")
+        print(f"{'='*80}")
+        
+        # 1. Overall Confusion Matrix (all classes seen so far)
+        if hasattr(self, 'all_task_targets') and len(self.all_task_targets) > 0:
+            all_classes = list(range(5))
+            cm = confusion_matrix(self.all_task_targets, self.all_task_preds, labels=all_classes)
+            print("\n=== OVERALL CONFUSION MATRIX (All Classes) ===")
+            print("Classes:", all_classes)
+            print(cm)
+            
+            # Overall accuracy
+            total_correct = sum(cm[i][i] for i in range(5))
+            total_samples = cm.sum()
+            overall_acc = total_correct / total_samples if total_samples > 0 else 0
+            print(f"Overall Accuracy: {overall_acc:.4f}")
+        
+        # 2. Per-class metrics (Precision, Recall, F1, Sensitivity)
+        print("\n=== PER-CLASS METRICS ===")
+        if len(self.all_task_targets) > 0:
+            precision, recall, f1, support = precision_recall_fscore_support(
+                self.all_task_targets, self.all_task_preds, labels=list(range(5)), average=None, zero_division=0
+            )
+            
+            for class_id in range(5):
+                if support[class_id] > 0:
+                    sensitivity = recall[class_id]  # Sensitivity = Recall
+                    print(f"Class {class_id}: Precision={precision[class_id]:.4f}, Recall={recall[class_id]:.4f}, "
+                          f"F1={f1[class_id]:.4f}, Sensitivity={sensitivity:.4f}, Support={support[class_id]}")
+                else:
+                    print(f"Class {class_id}: No samples yet")
+        
+        # 3. Domain-wise Class-wise Accuracies
+        print("\n=== DOMAIN-WISE CLASS-WISE ACCURACIES ===")
+        for domain_id in range(current_task_id + 1):
+            print(f"\nDomain {domain_id} ({self.domain_list[domain_id]}):")
+            for class_id in range(5):
+                stats = self.domain_class_stats[domain_id][class_id]
+                if stats['total'] > 0:
+                    acc = stats['correct'] / stats['total']
+                    print(f"  Class {class_id}: {acc:.4f} ({stats['correct']}/{stats['total']})")
+                else:
+                    print(f"  Class {class_id}: No samples")
+        
+        # 4. Domain-wise Confusion Matrix
+        print("\n=== DOMAIN-WISE CONFUSION MATRICES ===")
+        for domain_id in range(current_task_id + 1):
+            print(f"\nDomain {domain_id} ({self.domain_list[domain_id]}) Confusion Matrix:")
+            cm_domain = np.array([[self.domain_confusion[domain_id][i][j] for j in range(5)] for i in range(5)])
+            print(cm_domain)
+            
+            # Domain accuracy
+            domain_correct = sum(cm_domain[i][i] for i in range(5))
+            domain_total = cm_domain.sum()
+            domain_acc = domain_correct / domain_total if domain_total > 0 else 0
+            print(f"Domain {domain_id} Accuracy: {domain_acc:.4f}")
+        
+        # 5. Task-wise metrics
+        print("\n=== TASK-WISE ACCURACIES ===")
+        for task_id in range(current_task_id + 1):
+            task_correct = sum(self.task_class_stats[task_id][c]['correct'] for c in range(5))
+            task_total = sum(self.task_class_stats[task_id][c]['total'] for c in range(5))
+            task_acc = task_correct / task_total if task_total > 0 else 0
+            print(f"Task {task_id}: {task_acc:.4f} ({task_correct}/{task_total})")
+        
+        # 6. Average per-class accuracy
+        print("\n=== AVERAGE PER-CLASS ACCURACY ===")
+        class_accs = []
+        for class_id in range(5):
+            total_correct = sum(self.domain_class_stats[d][class_id]['correct'] for d in range(current_task_id + 1))
+            total_samples = sum(self.domain_class_stats[d][class_id]['total'] for d in range(current_task_id + 1))
+            if total_samples > 0:
+                class_acc = total_correct / total_samples
+                class_accs.append(class_acc)
+                print(f"Class {class_id}: {class_acc:.4f} ({total_correct}/{total_samples})")
+            else:
+                print(f"Class {class_id}: No samples")
+        
+        if class_accs:
+            avg_per_class_acc = np.mean(class_accs)
+            print(f"Average Per-Class Accuracy: {avg_per_class_acc:.4f}")
+        
+        # 7. Forward and Backward Transfer
+        if current_task_id > 0:
+            print("\n=== TRANSFER METRICS ===")
+            
+            # Forward Transfer: How much learning previous tasks helped with current task
+            if len(self.task_acc_history[current_task_id][current_task_id]) > 0:
+                current_task_acc = self.task_acc_history[current_task_id][current_task_id][-1]
+                print(f"Current task ({current_task_id}) accuracy: {current_task_acc:.4f}")
+            
+            # Backward Transfer: How much current task affected previous tasks
+            backward_transfers = []
+            for prev_task in range(current_task_id):
+                if len(self.task_acc_history[prev_task]) >= 2:
+                    # Compare performance on previous task before and after current task
+                    prev_accs = [acc_list[-1] for acc_list in self.task_acc_history[prev_task].values()]
+                    if len(prev_accs) >= 2:
+                        backward_transfer = prev_accs[-1] - prev_accs[prev_task]
+                        backward_transfers.append(backward_transfer)
+                        print(f"Backward transfer for Task {prev_task}: {backward_transfer:.4f}")
+            
+            if backward_transfers:
+                avg_backward_transfer = np.mean(backward_transfers)
+                print(f"Average Backward Transfer: {avg_backward_transfer:.4f}")
+        
+        # 8. Forgetting Analysis
+        if current_task_id > 0:
+            print("\n=== FORGETTING ANALYSIS ===")
+            
+            # Task-wise forgetting
+            for prev_task in range(current_task_id):
+                if prev_task in self.task_acc_history and len(self.task_acc_history[prev_task]) > 1:
+                    accs = [acc_list[-1] if acc_list else 0 for acc_list in self.task_acc_history[prev_task].values()]
+                    if len(accs) >= 2:
+                        max_acc = max(accs)
+                        current_acc = accs[-1]
+                        forgetting = max_acc - current_acc
+                        print(f"Task {prev_task} forgetting: {forgetting:.4f} (max: {max_acc:.4f}, current: {current_acc:.4f})")
+        
+        print(f"\n{'='*80}")
+        print(f"END OF METRICS FOR TASK {current_task_id + 1}")
+        print(f"{'='*80}\n")
+    
+   def evaluate_till_now(self, model: torch.nn.Module, data_loader, 
+                    device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None):
+        stat_matrix = np.zeros((3, args.num_tasks))  # 3 for Acc@1, Acc@5, Loss
         flag_t5 = 0
-        if(task_id == 4):
+        if task_id == 4:
             flag_t5 = 1
-        print("======Flag Task 4 flag : ",flag_t5)
-        for i in range(task_id+1):
+        print("======Flag Task 4 flag : ", flag_t5)
+        
+        # Reset cumulative stats for this evaluation
+        if flag_t5 == 1:
+            self.all_task_targets = []
+            self.all_task_preds = []
+            self.all_task_domains = []
+        
+        for i in range(task_id + 1):
             test_stats = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
-                                device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5 = flag_t5)
+                                device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5=flag_t5)
             print(f"\nTesting on Task {i}:")
             print(f"Domain: {self.domain_list[i]}")
-            print(f"Classes: {self.class_mask[i]}") 
-
-
+            print(f"Classes: {self.class_mask[i]}")
+    
             stat_matrix[0, i] = test_stats['Acc@1']
-            # stat_matrix[1, i] = test_stats['Acc@5']
             stat_matrix[2, i] = test_stats['Loss']
-
             acc_matrix[i, task_id] = test_stats['Acc@1']
         
-        avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id+1)
-
+        avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id + 1)
         diagonal = np.diag(acc_matrix)
-
-        result_str = "[Average accuracy till task{}]	Acc@1: {:.4f}	Acc@5: {:.4f}	Loss: {:.4f}".format(task_id+1, avg_stat[0], avg_stat[1], avg_stat[2])
+    
+        result_str = "[Average accuracy till task{}]	Acc@1: {:.4f}	Acc@5: {:.4f}	Loss: {:.4f}".format(
+            task_id + 1, avg_stat[0], avg_stat[1], avg_stat[2])
+        
         if task_id > 0:
             forgetting = np.mean((np.max(acc_matrix, axis=1) - acc_matrix[:, task_id])[:task_id])
             backward = np.mean((acc_matrix[:, task_id] - diagonal)[:task_id])
-            forward = np.mean((acc_matrix[:, task_id] - acc_matrix[:, 0])[1:task_id+1])
+            forward = np.mean((acc_matrix[:, task_id] - acc_matrix[:, 0])[1:task_id + 1])
         
             result_str += "	Forgetting: {:.4f}	Backward: {:.4f}	Forward: {:.4f}".format(
                 forgetting, backward, forward)
-
-        print(result_str)
-        return test_stats
     
+        print(result_str)
+        
+        # Print comprehensive metrics after each task
+        self.print_comprehensive_metrics_after_task(task_id)
+        
+        return test_stats
+                        
     def flatten_parameters(self,modules):
         flattened_params = []
        
