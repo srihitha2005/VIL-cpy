@@ -654,7 +654,7 @@ class Engine():
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
     def print_comprehensive_metrics_after_task(self, current_task_id):
-    """Print comprehensive metrics after each task"""
+        """Print comprehensive metrics after each task"""
         from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
         import numpy as np
         
