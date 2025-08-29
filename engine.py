@@ -767,7 +767,7 @@ class Engine():
         print(f"END OF METRICS FOR TASK {current_task_id + 1}")
         print(f"{'='*80}\n")
     
-   def evaluate_till_now(self, model: torch.nn.Module, data_loader, 
+    def evaluate_till_now(self, model: torch.nn.Module, data_loader, 
                     device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None):
         stat_matrix = np.zeros((3, args.num_tasks))  # 3 for Acc@1, Acc@5, Loss
         flag_t5 = 0
