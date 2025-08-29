@@ -528,114 +528,114 @@ class Engine():
         else:
             print("No classes were used.")
     @torch.no_grad()
-def evaluate(self, model: torch.nn.Module, data_loader, 
+    def evaluate(self, model: torch.nn.Module, data_loader, 
             device, task_id=-1, class_mask=None, ema_model=None, args=None, flag_t5=0):
-    criterion = torch.nn.CrossEntropyLoss()
-    all_targets = []
-    all_preds = []
-    all_domains = []
-
-    metric_logger = utils.MetricLogger(delimiter="  ")
-    header = 'Test: [Task {}]'.format(task_id + 1)
-                
-    # switch to evaluation mode
-    model.eval()
-
-    correct_sum, total_sum = 0, 0
-    label_correct, label_total = np.zeros((self.class_group_size)), np.zeros((self.class_group_size))
+        criterion = torch.nn.CrossEntropyLoss()
+        all_targets = []
+        all_preds = []
+        all_domains = []
     
-    with torch.no_grad():
-        for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
-            if args.develop:
-                if batch_idx > 20:
-                    break
-            
-            input = input.to(device, non_blocking=True)
-            target = target.to(device, non_blocking=True)
-            output = model(input)
-            
-            output, correct, total = self.get_max_label_logits(output, class_mask[task_id], task_id=task_id, target=target, slice=True) 
-            output_ema = [output.softmax(dim=1)]
-            correct_sum += correct
-            total_sum += total
-            
-            if ema_model is not None:
-                tmp_adapter = model.get_adapter()
-                model.put_adapter(ema_model.module)
-                output = model(input)
-                output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=True) 
-                output_ema.append(output.softmax(dim=1))
-                model.put_adapter(tmp_adapter)
-            
-            output = torch.stack(output_ema, dim=-1).max(dim=-1)[0]
-            loss = criterion(output, target)
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            _, preds = torch.max(output, 1)
-            
-            # Store predictions and targets
-            all_targets.extend(target.cpu().tolist())
-            all_preds.extend(preds.cpu().tolist())
-            all_domains.extend([task_id] * len(target))  # Domain is task_id
-            
-            # Update domain-class and task-class stats
-            for t, p in zip(target.cpu().tolist(), preds.cpu().tolist()):
-                # Domain-class stats
-                self.domain_class_stats[task_id][t]['total'] += 1
-                if t == p:
-                    self.domain_class_stats[task_id][t]['correct'] += 1
-                
-                # Task-class stats  
-                self.task_class_stats[task_id][t]['total'] += 1
-                if t == p:
-                    self.task_class_stats[task_id][t]['correct'] += 1
-                
-                # Update confusion matrices
-                self.domain_confusion[task_id][t][p] += 1
-                self.task_confusion[task_id][t][p] += 1
-            
-            if flag_t5 == 1:
-                self.task5_true.extend(target.cpu().tolist())
-                self.task5_pred.extend(preds.cpu().tolist())
-            
-            metric_logger.meters['Loss'].update(loss.item())
-            metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
-            metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
-            
-        if total_sum > 0:
-            print(f"Max Pooling acc: {correct_sum/total_sum}")
-            
-        if self.args.d_threshold and task_id == self.current_task:
-            domain_idx = int(self.label_train_count[self.current_classes][0])
-            self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
-            print(self.label_train_count)
-            print(self.acc_per_label)
-
-    # Store task accuracy for forgetting analysis
-    task_acc = metric_logger.meters['Acc@1'].global_avg
-    self.task_acc_history[task_id][self.current_task].append(task_acc)
-    
-    all_targets = np.array(all_targets)
-    all_preds = np.array(all_preds)
-    all_domains = np.array(all_domains)
-    
-    precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro', zero_division=0)
-    
-    metric_logger.synchronize_between_processes()
-    print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
-          .format(top1=metric_logger.meters['Acc@1'].global_avg, 
-                  loss=metric_logger.meters['Loss'].global_avg,
-                  precision=precision, recall=recall, f1=f1))
-    
-    # Store for global analysis
-    if flag_t5 == 1:
-        self.final_all_targets.extend(all_targets.tolist())
-        self.final_all_preds.extend(all_preds.tolist())
-        self.all_task_targets.extend(all_targets.tolist())
-        self.all_task_preds.extend(all_preds.tolist())
-        self.all_task_domains.extend(all_domains.tolist())
+        metric_logger = utils.MetricLogger(delimiter="  ")
+        header = 'Test: [Task {}]'.format(task_id + 1)
                     
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        # switch to evaluation mode
+        model.eval()
+    
+        correct_sum, total_sum = 0, 0
+        label_correct, label_total = np.zeros((self.class_group_size)), np.zeros((self.class_group_size))
         
+        with torch.no_grad():
+            for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
+                if args.develop:
+                    if batch_idx > 20:
+                        break
+                
+                input = input.to(device, non_blocking=True)
+                target = target.to(device, non_blocking=True)
+                output = model(input)
+                
+                output, correct, total = self.get_max_label_logits(output, class_mask[task_id], task_id=task_id, target=target, slice=True) 
+                output_ema = [output.softmax(dim=1)]
+                correct_sum += correct
+                total_sum += total
+                
+                if ema_model is not None:
+                    tmp_adapter = model.get_adapter()
+                    model.put_adapter(ema_model.module)
+                    output = model(input)
+                    output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=True) 
+                    output_ema.append(output.softmax(dim=1))
+                    model.put_adapter(tmp_adapter)
+                
+                output = torch.stack(output_ema, dim=-1).max(dim=-1)[0]
+                loss = criterion(output, target)
+                acc1, acc5 = accuracy(output, target, topk=(1, 5))
+                _, preds = torch.max(output, 1)
+                
+                # Store predictions and targets
+                all_targets.extend(target.cpu().tolist())
+                all_preds.extend(preds.cpu().tolist())
+                all_domains.extend([task_id] * len(target))  # Domain is task_id
+                
+                # Update domain-class and task-class stats
+                for t, p in zip(target.cpu().tolist(), preds.cpu().tolist()):
+                    # Domain-class stats
+                    self.domain_class_stats[task_id][t]['total'] += 1
+                    if t == p:
+                        self.domain_class_stats[task_id][t]['correct'] += 1
+                    
+                    # Task-class stats  
+                    self.task_class_stats[task_id][t]['total'] += 1
+                    if t == p:
+                        self.task_class_stats[task_id][t]['correct'] += 1
+                    
+                    # Update confusion matrices
+                    self.domain_confusion[task_id][t][p] += 1
+                    self.task_confusion[task_id][t][p] += 1
+                
+                if flag_t5 == 1:
+                    self.task5_true.extend(target.cpu().tolist())
+                    self.task5_pred.extend(preds.cpu().tolist())
+                
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                
+            if total_sum > 0:
+                print(f"Max Pooling acc: {correct_sum/total_sum}")
+                
+            if self.args.d_threshold and task_id == self.current_task:
+                domain_idx = int(self.label_train_count[self.current_classes][0])
+                self.acc_per_label[self.current_classes, domain_idx] += np.round(label_correct / label_total, decimals=3)
+                print(self.label_train_count)
+                print(self.acc_per_label)
+    
+        # Store task accuracy for forgetting analysis
+        task_acc = metric_logger.meters['Acc@1'].global_avg
+        self.task_acc_history[task_id][self.current_task].append(task_acc)
+        
+        all_targets = np.array(all_targets)
+        all_preds = np.array(all_preds)
+        all_domains = np.array(all_domains)
+        
+        precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_preds, average='macro', zero_division=0)
+        
+        metric_logger.synchronize_between_processes()
+        print('* Acc@1 {top1:.3f} Loss {loss:.3f} Precision {precision:.3f} Recall {recall:.3f} F1 {f1:.3f}'
+              .format(top1=metric_logger.meters['Acc@1'].global_avg, 
+                      loss=metric_logger.meters['Loss'].global_avg,
+                      precision=precision, recall=recall, f1=f1))
+        
+        # Store for global analysis
+        if flag_t5 == 1:
+            self.final_all_targets.extend(all_targets.tolist())
+            self.final_all_preds.extend(all_preds.tolist())
+            self.all_task_targets.extend(all_targets.tolist())
+            self.all_task_preds.extend(all_preds.tolist())
+            self.all_task_domains.extend(all_domains.tolist())
+                        
+        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+            
 
     def print_comprehensive_metrics_after_task(self, current_task_id):
         """Print comprehensive metrics after each task"""
