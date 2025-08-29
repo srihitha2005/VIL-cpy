@@ -270,15 +270,21 @@ class Engine():
         weights = torch.tensor(weights)
         weights = weights / torch.sum(weights) # summation-> 1
         return weights
-    
-    def train_one_epoch(self,model: torch.nn.Module, 
+        
+    def train_one_epoch(self, model: torch.nn.Module, 
                         criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                         device: torch.device, epoch: int, max_norm: float = 0,
                         set_training_mode=True, task_id=-1, class_mask=None, ema_model = None, args = None,):
         
         torch.cuda.empty_cache()
+        
+        # Memory optimization settings
+        if hasattr(torch.backends, 'cudnn'):
+            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.deterministic = True
+        
         model.train(set_training_mode)
-
+    
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
         metric_logger.add_meter('Loss', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
@@ -286,192 +292,170 @@ class Engine():
         
         for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
             if self.args.develop:
-                if batch_idx>20:
+                if batch_idx > 20:
                     break
+            
+            # Clear cache every 20 batches to prevent memory buildup
+            if batch_idx % 20 == 0:
+                torch.cuda.empty_cache()
+                
             input = input.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-
-            #Replay
-            # # --- Replay buffer: Add replay samples to current batch ---
-            # all_buffer_samples = []
-            # for key in self.replay_buffer:
-            #     all_buffer_samples.extend(self.replay_buffer[key])
-            # if len(all_buffer_samples) > 0:
-            #     N = min(self.args.replay_batch_size, len(all_buffer_samples))
-            #     replay_samples = random.sample(all_buffer_samples, N)
-            #     replay_inputs, replay_targets, _ = zip(*replay_samples)
-            #     replay_inputs = torch.stack(replay_inputs).to(device)
-            #     replay_targets = torch.stack(replay_targets).to(device)
-            #     input = torch.cat([input, replay_inputs], dim=0)
-            #     target = torch.cat([target, replay_targets], dim=0)
-            # # -----------------------------------------------------------
-            output = model(input) # (bs, class + n)
-            distill_loss=0
+    
+            output = model(input)  # (bs, class + n)
+            distill_loss = 0
+            
             if self.distill_head is not None:
                 feature = model.forward_features(input)[:, 0]
                 with torch.no_grad():
                     teacher_logits = self.distill_head(feature)
-
+    
                 # Masking to get distillation classes only (older classes)
                 mask = torch.isin(torch.tensor(self.labels_in_head), torch.tensor(self.current_classes))
                 cur_class_nodes = torch.where(mask)[0]
                 m = torch.isin(torch.tensor(self.labels_in_head[cur_class_nodes]), torch.tensor(list(self.added_classes_in_cur_task)))
                 distill_node_indices = self.labels_in_head[cur_class_nodes][~m]
-
+    
                 # Get student + teacher logits for distillation
                 student_logits = output[:, distill_node_indices]
                 teacher_logits = teacher_logits[:, distill_node_indices]
-
+    
                 # KL divergence for logits
                 logit_distill_loss = torch.nn.functional.kl_div(
                     torch.log_softmax(student_logits / args.distill_temp, dim=1),
                     torch.softmax(teacher_logits / args.distill_temp, dim=1),
                     reduction='batchmean'
                 ) * (args.distill_temp ** 2)
-
+    
                 # Feature distillation (cosine sim)
                 student_feat = feature
                 with torch.no_grad():
                     teacher_feat = model.forward_features(input)[:, 0]  # from previous model if needed
-
+    
                 feature_loss = 1 - self.cs(student_feat, teacher_feat.detach()).mean()
-
+    
                 # Combine losses
                 distill_loss = args.alpha_feat * feature_loss + args.alpha_logit * logit_distill_loss
-               
-        
-            if output.shape[-1] > self.num_classes: # there are already added nodes till now 
-                output,_,_ = self.get_max_label_logits(output, class_mask[task_id],slice=False)
-                if len(self.added_classes_in_cur_task) > 0: # there are added nodes in current task
+    
+            if output.shape[-1] > self.num_classes:  # there are already added nodes till now 
+                output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=False)
+                if len(self.added_classes_in_cur_task) > 0:  # there are added nodes in current task
                     for added_class in self.added_classes_in_cur_task:
-                        cur_node = np.where(self.labels_in_head == added_class)[0][-1] # the latest appended node
-                        output[:, added_class] = output[:,cur_node]# replace logit value of added label
+                        cur_node = np.where(self.labels_in_head == added_class)[0][-1]  # the latest appended node
+                        output[:, added_class] = output[:, cur_node]  # replace logit value of added label
                     
-                output = output[:, :self.num_classes]       
-            # print("Entered")
-            # here is the trick to mask out classes of non-current tasks
+                output = output[:, :self.num_classes]
+                
+            # Here is the trick to mask out classes of non-current tasks
             if args.train_mask and class_mask is not None:
                 mask = class_mask[task_id]
                 not_mask = np.setdiff1d(np.arange(5), mask)
-                # print("output.shape:", output.shape)
-                # print("mask:", mask)
-                # print("not_mask:", not_mask)
-                # print("args.nb_classes:", args.nb_classes)
-                # print("class_mask[task_id]:", class_mask[task_id])
                 not_mask_tensor = torch.tensor(not_mask, dtype=torch.int64).to(output.device)
-                # print("not_mask_tensor:", not_mask_tensor)
                 logits = output.index_fill(dim=1, index=not_mask_tensor, value=float('-inf'))
-
-            # Add your debug prints here
-            # print("Labels:", target)
-            # print("Min label:", target.min().item(), "Max label:", target.max().item())
-            # print("Model output shape:", logits.shape)
-            loss = criterion(logits, target) # (bs, class), (bs)
+    
+            loss = criterion(logits, target)  # (bs, class), (bs)
             task_loss = loss  # keep original task loss separately
-            
-           
+    
             if self.args.use_cast_loss:
-                if len(self.adapter_vec)> args.k: 
+                if len(self.adapter_vec) > args.k: 
                     cur_adapters = model.get_adapter()
                     self.cur_adapters = self.flatten_parameters(cur_adapters)
-                    diff_adapter = self.cur_adapters-self.prev_adapters
+                    diff_adapter = self.cur_adapters - self.prev_adapters
                     _, other = self.find_same_cluster_items(diff_adapter)
                     sim = 0
                     
-                    # if self.args.ws:
-                    weights = self.calculate_l2_distance(diff_adapter,other)
-                    for o,w in zip(other,weights):
+                    weights = self.calculate_l2_distance(diff_adapter, other)
+                    for o, w in zip(other, weights):
                         if self.args.norm_cast:
-                            sim += w * torch.matmul(diff_adapter, o) / (torch.norm(diff_adapter)*torch.norm(o))
+                            sim += w * torch.matmul(diff_adapter, o) / (torch.norm(diff_adapter) * torch.norm(o))
                         else:
                             sim += w * torch.matmul(diff_adapter, o)
-                    # else:
-                        # for o in other:
-                            # sim += torch.matmul(diff_adapter, o)
-                        # sim /= len(other)
+                            
                     orth_loss = args.beta * torch.abs(sim)
                     if self.args.use_cast_loss:  
-                        if orth_loss>0:
+                        if orth_loss > 0:
                             loss += orth_loss
-                    
+    
             if self.args.IC:
                 if distill_loss > 0:
                     loss += distill_loss
-           
+    
             acc1, acc5 = accuracy(logits, target, topk=(1, 5))
-
-            # if not math.isfinite(loss.item()):
-            #     print("Loss is {}, ".format(loss.item()))
-                # sys.exit(1)
+    
             if self.current_task == 0:
                 for param in model.parameters():
                     param.requires_grad = True
-                
-
+    
             optimizer.zero_grad()
+            
             # Functional Regularization directly here
             if args.use_spectral_reg:
                 spec_loss = self.spectral_regularization(model, lambda_spec=args.lambda_spec, device=device)
-                loss += spec_loss            
+                loss += spec_loss
+                
             loss.backward(retain_graph=False)
             optimizer.step()
-
-            #Replay
-            # --- Add new samples to replay buffer ---
-            for i in range(input.size(0)):
-                # Only add non-replay samples (from the current batch), not replayed ones
-                if i >= input.size(0) - getattr(self.args, "replay_batch_size", 0):
-                    break  # skip the replayed samples
-                class_id = target[i].item()
-                # If you track domain per task, use task_id, else use your domain logic
-                domain_id = task_id
-                score = self.compute_sample_score(model, input[i], target[i])
-                sample = (input[i].detach().cpu(), target[i].detach().cpu(), score)
-                # Update seen_classes and buffer quota if new
-                if class_id not in self.seen_classes:
-                    self.seen_classes.add(class_id)
-                    self._update_buffer_quota()
-                self._collect_buffer_samples(class_id, domain_id, [sample])
-            
-            self._rebalance_buffer()
-            # -------------------------------------------
-
-            # #Changed
-            # #print("Input : ",input.shape)
-            # for i in range(input.size(0)):
-            #     score = self.compute_sample_score(model, input[i], target[i])
-            #     if(self.current_task == 0 or self.current_task ==2 ):
-            #         current_domain = 0
-            #     elif(self.current_task == 1):
-            #         current_domain = 2
-            #     else:
-            #         current_domain=3
-            #     domain_id = current_domain  # ⚠ You need to track which domain you're on
-            #     class_id = target[i].item()
-            #     key = (domain_id, class_id)
+    
+            # Replay - Add new samples to replay buffer
+            try:
+                for i in range(input.size(0)):
+                    # Only add non-replay samples (from the current batch), not replayed ones
+                    if i >= input.size(0) - getattr(self.args, "replay_batch_size", 0):
+                        break  # skip the replayed samples
+                        
+                    class_id = target[i].item()
+                    domain_id = task_id  # If you track domain per task, use task_id
+                    
+                    # Move to CPU immediately to save GPU memory
+                    input_cpu = input[i].detach().cpu()
+                    target_cpu = target[i].detach().cpu()
+                    
+                    score = self.compute_sample_score(model, input[i], target[i])
+                    sample = (input_cpu, target_cpu, score)
+                    
+                    # Update seen_classes and buffer quota if new
+                    if class_id not in self.seen_classes:
+                        self.seen_classes.add(class_id)
+                        self._update_buffer_quota()
+                        
+                    self._collect_buffer_samples(class_id, domain_id, [sample])
                 
-            #     self.replay_buffer[key].append((input[i].detach().cpu(), target[i].detach().cpu(), score))
-            
-            # # Maintain per-key buffer size
-            # if len(self.replay_buffer[key]) > self.buffer_size_per_key:
-            #     self.replay_buffer[key].sort(key=lambda x: x[2], reverse=True)
-            #     k = int(self.replay_top_k_percent * self.buffer_size_per_key)
-            #     self.replay_buffer[key] = self.replay_buffer[key][:k]
-
+                self._rebalance_buffer()
+            except Exception as e:
+                print(f"Warning: Replay buffer update failed: {e}")
+                # Continue training even if replay fails
+    
             torch.cuda.synchronize()
+            
+            # Update metrics
             metric_logger.update(Loss=loss.item())
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
             metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
-
+    
             if ema_model is not None:
                 ema_model.update(model.get_adapter())
             
+            # Clear intermediate variables to save memory
+            del output, logits
+            if 'distill_loss' in locals() and distill_loss != 0:
+                del feature, teacher_logits, student_logits
+            if 'orth_loss' in locals():
+                del cur_adapters, diff_adapter
+                
+            # Clear cache periodically during training
+            if batch_idx % 50 == 0:
+                torch.cuda.empty_cache()
+        
         # gather the stats from all processes
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
+        
+        # Final cache clear
+        torch.cuda.empty_cache()
+        
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
+                            
     def get_max_label_logits(self,output, class_mask,task_id=None, slice=True,target=None):
         #! Get max value for each label output
         correct=0
@@ -548,6 +532,9 @@ class Engine():
         correct_sum, total_sum = 0, 0
         label_correct, label_total = np.zeros((self.class_group_size)), np.zeros((self.class_group_size))
         
+        # Clear GPU cache before evaluation
+        torch.cuda.empty_cache()
+        
         with torch.no_grad():
             for batch_idx, (input, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
                 if args.develop:
@@ -556,6 +543,11 @@ class Engine():
                 
                 input = input.to(device, non_blocking=True)
                 target = target.to(device, non_blocking=True)
+                
+                # Clear cache periodically during evaluation
+                if batch_idx % 50 == 0:
+                    torch.cuda.empty_cache()
+                
                 output = model(input)
                 
                 output, correct, total = self.get_max_label_logits(output, class_mask[task_id], task_id=task_id, target=target, slice=True) 
@@ -576,13 +568,17 @@ class Engine():
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
                 _, preds = torch.max(output, 1)
                 
+                # Move to CPU immediately to save GPU memory
+                target_cpu = target.cpu().tolist()
+                preds_cpu = preds.cpu().tolist()
+                
                 # Store predictions and targets
-                all_targets.extend(target.cpu().tolist())
-                all_preds.extend(preds.cpu().tolist())
-                all_domains.extend([task_id] * len(target))  # Domain is task_id
+                all_targets.extend(target_cpu)
+                all_preds.extend(preds_cpu)
+                all_domains.extend([task_id] * len(target_cpu))
                 
                 # Update domain-class and task-class stats
-                for t, p in zip(target.cpu().tolist(), preds.cpu().tolist()):
+                for t, p in zip(target_cpu, preds_cpu):
                     # Domain-class stats
                     self.domain_class_stats[task_id][t]['total'] += 1
                     if t == p:
@@ -598,12 +594,17 @@ class Engine():
                     self.task_confusion[task_id][t][p] += 1
                 
                 if flag_t5 == 1:
-                    self.task5_true.extend(target.cpu().tolist())
-                    self.task5_pred.extend(preds.cpu().tolist())
+                    self.task5_true.extend(target_cpu)
+                    self.task5_pred.extend(preds_cpu)
                 
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
                 metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                
+                # Clear variables to save memory
+                del input, target, output
+                if 'output_ema' in locals():
+                    del output_ema
                 
             if total_sum > 0:
                 print(f"Max Pooling acc: {correct_sum/total_sum}")
@@ -618,13 +619,14 @@ class Engine():
         task_acc = metric_logger.meters['Acc@1'].global_avg
         self.task_acc_history[task_id][self.current_task].append(task_acc)
         
-        # Store domain and class accuracies for forgetting analysis
+        # Store domain accuracy for forgetting analysis  
         domain_correct = sum(self.domain_class_stats[task_id][c]['correct'] for c in range(5))
         domain_total = sum(self.domain_class_stats[task_id][c]['total'] for c in range(5))
         if domain_total > 0:
             domain_acc = domain_correct / domain_total
             self.domain_acc_history[task_id][self.current_task].append(domain_acc)
         
+        # Store class accuracy for forgetting analysis
         for class_id in range(5):
             stats = self.domain_class_stats[task_id][class_id]
             if stats['total'] > 0:
@@ -650,9 +652,11 @@ class Engine():
             self.all_task_targets.extend(all_targets.tolist())
             self.all_task_preds.extend(all_preds.tolist())
             self.all_task_domains.extend(all_domains.tolist())
+        
+        # Clear cache at the end
+        torch.cuda.empty_cache()
                         
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
     def print_comprehensive_metrics_after_task(self, current_task_id):
         """Print comprehensive metrics after each task"""
         from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
@@ -865,6 +869,7 @@ class Engine():
         print(f"\n{'='*80}")
         print(f"END OF METRICS FOR TASK {current_task_id + 1}")
         print(f"{'='*80}\n")
+
     
     def evaluate_till_now(self, model: torch.nn.Module, data_loader, 
                     device, task_id=-1, class_mask=None, acc_matrix=None, ema_model=None, args=None):
