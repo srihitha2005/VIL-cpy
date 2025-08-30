@@ -684,7 +684,7 @@ class Engine():
             acc_matrix[i, task_id] = test_stats['Acc@1']
 
         #Changed
-        self.print_cumulative_results(task_id=task_id,acc_matrix)
+        self.print_cumulative_results(task_id=task_id,acc_matrix = acc_matrix)
 
         avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id+1)
 
