@@ -662,9 +662,9 @@ class Engine():
         print("======Flag Task 4 flag : ",flag_t5)
 
         #Changed
-        if task_id == 0:
-            self.all_targets_cumulative = []
-            self.all_preds_cumulative = []
+        # if task_id == 0:
+        self.all_targets_cumulative = []
+        self.all_preds_cumulative = []
             
         for i in range(task_id+1):
             test_stats, all_targets, all_preds = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
