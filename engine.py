@@ -801,6 +801,8 @@ class Engine():
             print('Freezing adapter parameters for {} epochs'.format(args.num_freeze_epochs))
 
         if epoch == args.num_freeze_epochs:
+            import torch
+                torch.cuda.empty_cache()
             for n, p in model.named_parameters():
                 if 'adapter' in n:
                     p.requires_grad = True
