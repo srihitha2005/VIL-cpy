@@ -684,7 +684,7 @@ class Engine():
             acc_matrix[i, task_id] = test_stats['Acc@1']
 
         #Changed
-        self.print_cumulative_results(task_id=task_id)
+        self.print_cumulative_results(task_id=task_id,acc_matrix)
 
         avg_stat = np.divide(np.sum(stat_matrix, axis=1), task_id+1)
 
@@ -703,7 +703,7 @@ class Engine():
         return test_stats
                             
     #Changed
-    def print_cumulative_results(self, task_id):
+    def print_cumulative_results(self, task_id,acc_matrix):
         import numpy as np
         from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
         
@@ -739,6 +739,38 @@ class Engine():
             total = np.sum(y_true == cls)
             acc = correct / total if total > 0 else 0
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
+        
+        # ------------------------------------------------------------------
+        ## Continual Learning Metrics (Forgetting, Forward, Backward)
+        # ------------------------------------------------------------------
+        if task_id > 0:
+            # Get the highest accuracy for each previous task
+            A_max = np.max(acc_matrix[:task_id, :task_id], axis=1)
+            # Get the accuracy for each previous task after training the current task
+            A_final = acc_matrix[:task_id, task_id]
+            
+            # **Forgetting (F)**: The average drop in accuracy on previous tasks.
+            # It's the difference between the highest accuracy achieved on a past task and the
+            # current accuracy on that same task.
+            forgetting = np.mean(A_max - A_final)
+            
+            # **Backward Transfer (BWT)**: The influence of the new task's learning on past tasks.
+            # It's the average difference between the accuracy on past tasks after training the
+            # new task and the accuracy on those same tasks at the end of their own training.
+            # This measures how much "new" knowledge improves performance on old tasks.
+            BWT = np.mean(A_final - np.diag(acc_matrix)[:task_id])
+            
+            # **Forward Transfer (FWT)**: How past knowledge affects the learning of the new task.
+            # It's the difference between the accuracy on the new task after training on previous
+            # tasks and the accuracy on the new task when trained from scratch (which is often 0 or
+            # a baseline). Your current setup uses A_0 as the baseline.
+            FWT = np.mean(acc_matrix[1:task_id+1, task_id] - acc_matrix[1:task_id+1, 0])
+            
+            print("\n=== Continual Learning Metrics ===")
+            print(f"Forgetting: {forgetting:.4f}")
+            print(f"Backward Transfer (BWT): {BWT:.4f}")
+            print(f"Forward Transfer (FWT): {FWT:.4f}")
+
     def flatten_parameters(self,modules):
         flattened_params = []
        
