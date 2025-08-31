@@ -781,7 +781,7 @@ class Engine():
         
         # Calculate domain-wise continual learning metrics
         if task_id > 0 and len(self.domain_accuracy_history) > 0:
-            print("\n=== DOMAIN-WISE CONTINUAL LEARNING METRICS ===")
+            # print("\n=== DOMAIN-WISE CONTINUAL LEARNING METRICS ===")
             
             for domain_id in sorted(self.current_domain_class_stats.keys()):
                 print(f"\nDomain {domain_id}:")
@@ -824,8 +824,8 @@ class Engine():
                 if class_forgetting:
                     avg_forgetting = np.mean(class_forgetting)
                     avg_backward = np.mean(class_backward)
-                    print(f"  Domain {domain_id} Average Forgetting: {avg_forgetting:.4f}")
-                    print(f"  Domain {domain_id} Average Backward Transfer: {avg_backward:.4f}")
+                    # print(f"  Domain {domain_id} Average Forgetting: {avg_forgetting:.4f}")
+                    # print(f"  Domain {domain_id} Average Backward Transfer: {avg_backward:.4f}")
         # ------------------------------------------------------------------
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
