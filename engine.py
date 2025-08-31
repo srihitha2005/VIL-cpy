@@ -679,7 +679,10 @@ class Engine():
         # if task_id == 0:
         self.all_targets_cumulative = []
         self.all_preds_cumulative = []
-            
+
+        # Reset domain-wise stats for fresh calculation
+        self.current_domain_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
+
         for i in range(task_id+1):
             if i > 0:
                 current_domain_acc = {}
@@ -691,9 +694,6 @@ class Engine():
                             current_domain_acc[domain_id][class_id] = stats['correct'] / stats['total']
                 self.domain_accuracy_history.append(current_domain_acc)
             
-            # Reset domain-wise stats for fresh calculation
-            self.current_domain_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
-
             test_stats, all_targets, all_preds = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
                                 device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5 = flag_t5)
             print(f"\nTesting on Task {i}:")
