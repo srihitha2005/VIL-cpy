@@ -777,6 +777,7 @@ class Engine():
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
         
         print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
+        # print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
         domain_avg_acc = {}
         
         for domain_id in sorted(self.current_domain_class_stats.keys()):
@@ -784,7 +785,7 @@ class Engine():
             domain_stats = self.current_domain_class_stats[domain_id]
             total_correct, total_samples = 0, 0
         
-            # --- per-class acc ---
+            # --- per-class accuracy ---
             for class_id in sorted(domain_stats.keys()):
                 correct = domain_stats[class_id]['correct']
                 total = domain_stats[class_id]['total']
@@ -793,7 +794,7 @@ class Engine():
                 total_samples += total
                 print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
         
-            # --- domain avg ---
+            # --- domain avg accuracy ---
             domain_acc = total_correct / total_samples if total_samples > 0 else 0
             domain_avg_acc[domain_id] = domain_acc
             print(f"--> Domain {domain_id} Accuracy: {domain_acc:.2%}")
@@ -804,30 +805,18 @@ class Engine():
         
                 backward = domain_acc - prev_acc
                 forgetting = max(prev_acc - domain_acc, 0)
-                forward = max(domain_acc - prev_acc, 0)  # forward gain
+                forward = max(domain_acc - prev_acc, 0)
         
-                print(f"    Prev: {prev_acc:.2%} | FWT: {forward:.2%} | BWT: {backward:.2%} | Forgetting: {forgetting:.2%}")
-        
+                print(f"    Prev: {prev_acc:.2%} | FWT: {forward:.2%} | "
+                      f"BWT: {backward:.2%} | Forgetting: {forgetting:.2%}")
             else:
-                # first time seeing this domain
+                self.domain_initial[domain_id] = domain_acc
                 print(f"    First eval → Forward baseline set at {domain_acc:.2%}")
         
-            # update history
+            # update histories
             self.domain_history[domain_id] = domain_acc
-        
-            # --- confusion matrix ---
-            if domain_id in self.current_domain_preds:  # store these during eval
-                y_true = self.current_domain_preds[domain_id]["y_true"]
-                y_pred = self.current_domain_preds[domain_id]["y_pred"]
-        
-                labels = sorted(set(y_true))  # unique class labels for domain
-                cm = confusion_matrix(y_true, y_pred, labels=labels)
-        
-                print("Confusion Matrix:")
-                print(cm)
+            self.domain_best[domain_id] = max(self.domain_best.get(domain_id, 0), domain_acc)
 
-
-        
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
         if task_id > 0:
