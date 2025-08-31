@@ -816,9 +816,9 @@ class Engine():
                         backward = current_acc[class_id] - first_acc
                         class_backward.append(backward)
                         
-                        print(f"  Class {class_id}:")
-                        print(f"    Current: {current_acc[class_id]:.4f}, Max Historical: {max_historical:.4f}")
-                        print(f"    Forgetting: {forgetting:.4f}, Backward Transfer: {backward:.4f}")
+                        # print(f"  Class {class_id}:")
+                        # print(f"    Current: {current_acc[class_id]:.4f}, Max Historical: {max_historical:.4f}")
+                        # print(f"    Forgetting: {forgetting:.4f}, Backward Transfer: {backward:.4f}")
                 
                 # Domain-level averages
                 if class_forgetting:
