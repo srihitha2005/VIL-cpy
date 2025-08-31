@@ -101,6 +101,8 @@ class Engine():
         self.domain_history = {}
         self.domain_best = {}          # best accuracy so far
         self.domain_initial = {}       # first-seen accuracy before training domain
+        self.accuracy_matrix = {}
+
 
 
     #changed
