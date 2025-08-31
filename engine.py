@@ -777,15 +777,13 @@ class Engine():
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
         
         print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
-        # print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
         domain_avg_acc = {}
-        
+    
         for domain_id in sorted(self.current_domain_class_stats.keys()):
             print(f"\nDomain {domain_id}:")
             domain_stats = self.current_domain_class_stats[domain_id]
             total_correct, total_samples = 0, 0
-        
-            # --- per-class accuracy ---
+    
             for class_id in sorted(domain_stats.keys()):
                 correct = domain_stats[class_id]['correct']
                 total = domain_stats[class_id]['total']
@@ -793,30 +791,30 @@ class Engine():
                 total_correct += correct
                 total_samples += total
                 print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
-        
-            # --- domain avg accuracy ---
+    
             domain_acc = total_correct / total_samples if total_samples > 0 else 0
             domain_avg_acc[domain_id] = domain_acc
             print(f"--> Domain {domain_id} Accuracy: {domain_acc:.2%}")
-        
-            # --- forgetting / forward / backward ---
+    
+            # if first time seeing this domain, save initial acc
+            if domain_id not in self.domain_initial:
+                self.domain_initial[domain_id] = domain_acc
+    
+            # backward + forgetting
             if domain_id in self.domain_history:
                 prev_acc = self.domain_history[domain_id]
-        
                 backward = domain_acc - prev_acc
-                forgetting = max(prev_acc - domain_acc, 0)
-                forward = max(domain_acc - prev_acc, 0)
-        
-                print(f"    Prev: {prev_acc:.2%} | FWT: {forward:.2%} | "
-                      f"BWT: {backward:.2%} | Forgetting: {forgetting:.2%}")
-            else:
-                self.domain_initial[domain_id] = domain_acc
-                print(f"    First eval → Forward baseline set at {domain_acc:.2%}")
-        
-            # update histories
+                forgetting = max(self.domain_best[domain_id] - domain_acc, 0)
+                print(f"    Prev: {prev_acc:.2%} | Backward: {backward:.2%} | Forgetting: {forgetting:.2%}")
+    
+            # forward transfer: compare first-seen (before training) with now
+            fwt = domain_acc - self.domain_initial[domain_id]
+            if domain_id in self.domain_initial:
+                print(f"    Forward: {fwt:.2%}")
+    
+            # update history and best
             self.domain_history[domain_id] = domain_acc
             self.domain_best[domain_id] = max(self.domain_best.get(domain_id, 0), domain_acc)
-
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
         if task_id > 0:
