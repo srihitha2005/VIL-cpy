@@ -406,24 +406,24 @@ class Engine():
             loss.backward(retain_graph=False)
             optimizer.step()
 
-            #Replay
-            # --- Add new samples to replay buffer ---
-            for i in range(input.size(0)):
-                # Only add non-replay samples (from the current batch), not replayed ones
-                if i >= input.size(0) - getattr(self.args, "replay_batch_size", 0):
-                    break  # skip the replayed samples
-                class_id = target[i].item()
-                # If you track domain per task, use task_id, else use your domain logic
-                domain_id = task_id
-                score = self.compute_sample_score(model, input[i], target[i])
-                sample = (input[i].detach().cpu(), target[i].detach().cpu(), score)
-                # Update seen_classes and buffer quota if new
-                if class_id not in self.seen_classes:
-                    self.seen_classes.add(class_id)
-                    self._update_buffer_quota()
-                self._collect_buffer_samples(class_id, domain_id, [sample])
+            # #Replay
+            # # --- Add new samples to replay buffer ---
+            # for i in range(input.size(0)):
+            #     # Only add non-replay samples (from the current batch), not replayed ones
+            #     if i >= input.size(0) - getattr(self.args, "replay_batch_size", 0):
+            #         break  # skip the replayed samples
+            #     class_id = target[i].item()
+            #     # If you track domain per task, use task_id, else use your domain logic
+            #     domain_id = task_id
+            #     score = self.compute_sample_score(model, input[i], target[i])
+            #     sample = (input[i].detach().cpu(), target[i].detach().cpu(), score)
+            #     # Update seen_classes and buffer quota if new
+            #     if class_id not in self.seen_classes:
+            #         self.seen_classes.add(class_id)
+            #         self._update_buffer_quota()
+            #     self._collect_buffer_samples(class_id, domain_id, [sample])
             
-            self._rebalance_buffer()
+            # self._rebalance_buffer()
             # -------------------------------------------
 
             # #Changed
