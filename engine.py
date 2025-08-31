@@ -102,7 +102,8 @@ class Engine():
         self.domain_best = {}          # best accuracy so far
         self.domain_initial = {}       # first-seen accuracy before training domain
         self.accuracy_matrix = {}
-
+        self.true_labels = {}
+        self.predicted_labels = {}
 
 
     #changed
@@ -776,110 +777,61 @@ class Engine():
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
                     
         print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
-        import numpy as np
-        from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+        domain_avg_acc = {}  # store domain-wise accuracies this round
         
-        # Assuming self.all_predictions and self.all_true_labels are populated domain-wise
-        # and self.accuracy_matrix is a dictionary of dictionaries, e.g., {i: {j: A_ij}}
-        
-        # --- 1. Compute and Print Domain-wise Metrics & Confusion Matrix ---
-        domain_metrics = {}
         for domain_id in sorted(self.current_domain_class_stats.keys()):
-            print(f"\nDomain {domain_id} Metrics:")
-            
-            # Assuming access to true labels and predictions for the domain
-            true_labels = self.all_true_labels[domain_id]
-            predicted_labels = self.all_predictions[domain_id]
-            
-            if len(true_labels) == 0:
-                continue
+            print(f"\nDomain {domain_id}:")
+            domain_stats = self.current_domain_class_stats[domain_id]
+            total_correct, total_samples = 0, 0
         
-            # a. Confusion Matrix
-            cm = confusion_matrix(true_labels, predicted_labels)
-            print("Confusion Matrix:")
-            print(cm)
-            
-            # b. Per-Class Metrics (Precision, Recall, F1)
-            precision, recall, f1, _ = precision_recall_fscore_support(true_labels, predicted_labels, average=None)
-            
-            # c. Overall Accuracy for the domain
-            domain_acc = np.mean(true_labels == predicted_labels)
-            
-            domain_metrics[domain_id] = {
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'accuracy': domain_acc
-            }
+            # class-wise accuracies
+            for class_id in sorted(domain_stats.keys()):
+                correct = domain_stats[class_id]['correct']
+                total = domain_stats[class_id]['total']
+                acc = correct / total if total > 0 else 0
+                total_correct += correct
+                total_samples += total
+                print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
         
-            print(f"--> Domain {domain_id} Overall Accuracy: {domain_acc:.2%}")
-            for i, (p, r, f) in enumerate(zip(precision, recall, f1)):
-                print(f"  Class {i}: Precision={p:.2f}, Recall={r:.2f}, F1-score={f:.2f}")
-            
-            # Update initial, best, and history accuracy
+            # domain-wise accuracy
+            domain_acc = total_correct / total_samples if total_samples > 0 else 0
+            domain_avg_acc[domain_id] = domain_acc
+            print(f"--> Domain {domain_id} Accuracy: {domain_acc:.2%}")
+        
+            # Backward transfer + Forgetting
+            if domain_id in self.domain_history:
+                prev_acc = self.domain_history[domain_id]
+                backward = domain_acc - prev_acc
+                forgetting = max(prev_acc - domain_acc, 0)
+                print(f"    Prev: {prev_acc:.2%} | Backward: {backward:.2%} | Forgetting: {forgetting:.2%}")
+        
+            # Forward transfer (compare with baseline before seeing this domain)
+            if domain_id not in self.domain_seen:
+                baseline_acc = self.domain_baseline.get(domain_id, 0.0)
+                forward = domain_acc - baseline_acc
+                print(f"    Forward: {forward:.2%} (Baseline: {baseline_acc:.2%})")
+                self.domain_seen.add(domain_id)
+        
+            # update history
             self.domain_history[domain_id] = domain_acc
-            if domain_id not in self.domain_initial:
-                self.domain_initial[domain_id] = domain_acc
-            self.domain_best[domain_id] = max(self.domain_best.get(domain_id, 0), domain_acc)
         
-            # Update accuracy matrix
-            current_domain_idx = sorted(self.domain_initial.keys()).index(domain_id)
-            self.accuracy_matrix.setdefault(current_domain_idx, {})
-            for old_domain_id in sorted(self.domain_initial.keys()):
-                old_domain_idx = sorted(self.domain_initial.keys()).index(old_domain_id)
-                # Assuming you re-evaluate the model on all domains after training on the current one
-                # This requires storing and re-running evaluation on old domains
-                # For simplicity, we'll assume a mechanism for this exists.
-                # Here we just use the current domain's accuracy for the self-loop
-                if old_domain_id == domain_id:
-                    self.accuracy_matrix[current_domain_idx][old_domain_idx] = domain_acc
-                else:
-                    # Placeholder for accuracy on a past domain after training on the current one
-                    # e.g., self.evaluate_on_domain(old_domain_id)
-                    pass
+            # Confusion Matrix for this domain
+            if domain_id in self.domain_preds and domain_id in self.domain_labels:
+                from sklearn.metrics import confusion_matrix
+                import pandas as pd
         
-        # --- 2. Print Accuracy Matrix ---
-        # num_domains = len(self.domain_initial)
-        # domain_ids = sorted(self.domain_initial.keys())
-        # print("\nAccuracy Matrix:")
-        # header = " " * 5 + " ".join([f"{did:<6}" for did in domain_ids])
-        # print(header)
-        # print("-" * len(header))
-        # for i in range(num_domains):
-        #     row_label = f"{domain_ids[i]:<4}|"
-        #     row_data = [f"{self.accuracy_matrix.get(i, {}).get(j, 0.0):.4f}" for j in range(num_domains)]
-        #     print(row_label + " ".join(row_data))
+                preds = self.domain_preds[domain_id]
+                labels = self.domain_labels[domain_id]
         
-        # --- 3. Calculate Forgetting, BWT, and FWT ---
-        # Convert the dictionary to a numpy array for easier calculation
-        acc_matrix = np.zeros((num_domains, num_domains))
-        for i in range(num_domains):
-            for j in range(num_domains):
-                acc_matrix[i, j] = self.accuracy_matrix.get(i, {}).get(j, 0.0)
-        
-        diagonal = np.diag(acc_matrix)
-        if num_domains > 1:
-            bwt_list, forgetting_list, fwt_list = [], [], []
-            for i in range(1, num_domains):
-                # Forgetting: Max acc on past tasks - current acc on past tasks
-                forgetting = np.mean(np.maximum(0, np.max(acc_matrix[:i, :i], axis=0) - acc_matrix[i, :i]))
-                forgetting_list.append(forgetting)
-                
-                # BWT: Current acc on past tasks - initial acc on past tasks
-                backward = np.mean(acc_matrix[i, :i] - diagonal[:i])
-                bwt_list.append(backward)
-                
-                # FWT: Current acc on new task - initial acc on new task
-                forward = acc_matrix[i, i] - acc_matrix[0, i] if acc_matrix[0, i] != 0 else 0
-                fwt_list.append(forward)
-        
-            mean_bwt = np.mean(bwt_list) if bwt_list else 0
-            mean_forgetting = np.mean(forgetting_list) if forgetting_list else 0
-            mean_fwt = np.mean(fwt_list) if fwt_list else 0
-        
-            print(f"\nMean Backward Transfer: {mean_bwt:.2%}")
-            print(f"Mean Forgetting: {mean_forgetting:.2%}")
-            print(f"Mean Forward Transfer: {mean_fwt:.2%}")
+                cm = confusion_matrix(labels, preds)
+                cm_df = pd.DataFrame(
+                    cm,
+                    index=[f"True_{c}" for c in range(cm.shape[0])],
+                    columns=[f"Pred_{c}" for c in range(cm.shape[1])]
+                )
+                print("\nConfusion Matrix:")
+                print(cm_df)
+
         
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
