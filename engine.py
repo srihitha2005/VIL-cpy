@@ -775,16 +775,16 @@ class Engine():
             total = np.sum(y_true == cls)
             acc = correct / total if total > 0 else 0
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
-                    
+        
         print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
-        domain_avg_acc = {}  # store domain-wise accuracies this round
+        domain_avg_acc = {}
         
         for domain_id in sorted(self.current_domain_class_stats.keys()):
             print(f"\nDomain {domain_id}:")
             domain_stats = self.current_domain_class_stats[domain_id]
             total_correct, total_samples = 0, 0
         
-            # class-wise accuracies
+            # --- per-class acc ---
             for class_id in sorted(domain_stats.keys()):
                 correct = domain_stats[class_id]['correct']
                 total = domain_stats[class_id]['total']
@@ -793,44 +793,39 @@ class Engine():
                 total_samples += total
                 print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
         
-            # domain-wise accuracy
+            # --- domain avg ---
             domain_acc = total_correct / total_samples if total_samples > 0 else 0
             domain_avg_acc[domain_id] = domain_acc
             print(f"--> Domain {domain_id} Accuracy: {domain_acc:.2%}")
         
-            # Backward transfer + Forgetting
+            # --- forgetting / forward / backward ---
             if domain_id in self.domain_history:
                 prev_acc = self.domain_history[domain_id]
+        
                 backward = domain_acc - prev_acc
                 forgetting = max(prev_acc - domain_acc, 0)
-                print(f"    Prev: {prev_acc:.2%} | Backward: {backward:.2%} | Forgetting: {forgetting:.2%}")
+                forward = max(domain_acc - prev_acc, 0)  # forward gain
         
-            # Forward transfer (compare with baseline before seeing this domain)
-            if domain_id not in self.domain_seen:
-                baseline_acc = self.domain_baseline.get(domain_id, 0.0)
-                forward = domain_acc - baseline_acc
-                print(f"    Forward: {forward:.2%} (Baseline: {baseline_acc:.2%})")
-                self.domain_seen.add(domain_id)
+                print(f"    Prev: {prev_acc:.2%} | FWT: {forward:.2%} | BWT: {backward:.2%} | Forgetting: {forgetting:.2%}")
+        
+            else:
+                # first time seeing this domain
+                print(f"    First eval → Forward baseline set at {domain_acc:.2%}")
         
             # update history
             self.domain_history[domain_id] = domain_acc
         
-            # Confusion Matrix for this domain
-            if domain_id in self.domain_preds and domain_id in self.domain_labels:
-                from sklearn.metrics import confusion_matrix
-                import pandas as pd
+            # --- confusion matrix ---
+            if domain_id in self.current_domain_preds:  # store these during eval
+                y_true = self.current_domain_preds[domain_id]["y_true"]
+                y_pred = self.current_domain_preds[domain_id]["y_pred"]
         
-                preds = self.domain_preds[domain_id]
-                labels = self.domain_labels[domain_id]
+                labels = sorted(set(y_true))  # unique class labels for domain
+                cm = confusion_matrix(y_true, y_pred, labels=labels)
         
-                cm = confusion_matrix(labels, preds)
-                cm_df = pd.DataFrame(
-                    cm,
-                    index=[f"True_{c}" for c in range(cm.shape[0])],
-                    columns=[f"Pred_{c}" for c in range(cm.shape[1])]
-                )
-                print("\nConfusion Matrix:")
-                print(cm_df)
+                print("Confusion Matrix:")
+                print(cm)
+
 
         
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
