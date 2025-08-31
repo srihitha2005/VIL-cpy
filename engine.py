@@ -96,6 +96,8 @@ class Engine():
         #Changed
         self.all_targets_cumulative = []
         self.all_preds_cumulative = []
+        self.current_domain_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
+        self.domain_accuracy_history = []  # Store domain accuracies after each task for forgetting calculation
 
     #changed
     @torch.no_grad()
@@ -598,6 +600,7 @@ class Engine():
                     self.task5_pred.extend(preds.cpu().tolist())
                 all_targets.extend(target.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
+                
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
                 metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
@@ -633,7 +636,18 @@ class Engine():
         # cm = confusion_matrix(all_targets, all_preds, labels=all_classes_seen)
         # print("Confusion Matrix (rows: true, cols: pred):")
         # print(cm)
-                    
+        # Changed
+        current_domain = self.domain_list[task_id]
+
+        #Changed
+        for class_id in class_correct:
+            self.current_domain_class_stats[current_domain][class_id]['correct'] += class_correct[class_id]
+            self.current_domain_class_stats[current_domain][class_id]['total'] += class_total[class_id]
+
+        for class_id in class_total:
+            if class_id not in class_correct:
+                self.current_domain_class_stats[current_domain][class_id]['total'] += class_total[class_id]
+
         #changed
         if flag_t5 == 1:
             self.final_all_targets.extend(all_targets.tolist())
@@ -667,6 +681,19 @@ class Engine():
         self.all_preds_cumulative = []
             
         for i in range(task_id+1):
+            if i > 0:
+                current_domain_acc = {}
+                for domain_id in self.current_domain_class_stats:
+                    current_domain_acc[domain_id] = {}
+                    for class_id in self.current_domain_class_stats[domain_id]:
+                        stats = self.current_domain_class_stats[domain_id][class_id]
+                        if stats['total'] > 0:
+                            current_domain_acc[domain_id][class_id] = stats['correct'] / stats['total']
+                self.domain_accuracy_history.append(current_domain_acc)
+            
+            # Reset domain-wise stats for fresh calculation
+            self.current_domain_class_stats = defaultdict(lambda: defaultdict(lambda: {'correct': 0, 'total': 0}))
+
             test_stats, all_targets, all_preds = self.evaluate(model=model, data_loader=data_loader[i]['val'], 
                                 device=device, task_id=i, class_mask=class_mask, ema_model=ema_model, args=args, flag_t5 = flag_t5)
             print(f"\nTesting on Task {i}:")
@@ -676,7 +703,9 @@ class Engine():
             #Changed 
             self.all_targets_cumulative.extend(all_targets.tolist())
             self.all_preds_cumulative.extend(all_preds.tolist())
-    
+
+            #changed
+            
             stat_matrix[0, i] = test_stats['Acc@1']
             # stat_matrix[1, i] = test_stats['Acc@5']
             stat_matrix[2, i] = test_stats['Loss']
@@ -739,7 +768,64 @@ class Engine():
             total = np.sum(y_true == cls)
             acc = correct / total if total > 0 else 0
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
+            
+        print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
+        for domain_id in sorted(self.current_domain_class_stats.keys()):
+            print(f"\nDomain {domain_id}:")
+            domain_stats = self.current_domain_class_stats[domain_id]
+            for class_id in sorted(domain_stats.keys()):
+                correct = domain_stats[class_id]['correct']
+                total = domain_stats[class_id]['total']
+                acc = correct / total if total > 0 else 0
+                print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
         
+        # Calculate domain-wise continual learning metrics
+        if task_id > 0 and len(self.domain_accuracy_history) > 0:
+            print("\n=== DOMAIN-WISE CONTINUAL LEARNING METRICS ===")
+            
+            for domain_id in sorted(self.current_domain_class_stats.keys()):
+                print(f"\nDomain {domain_id}:")
+                
+                # Get current accuracies for this domain
+                current_acc = {}
+                if domain_id in self.current_domain_class_stats:
+                    for class_id in self.current_domain_class_stats[domain_id]:
+                        stats = self.current_domain_class_stats[domain_id][class_id]
+                        if stats['total'] > 0:
+                            current_acc[class_id] = stats['correct'] / stats['total']
+                
+                # Calculate metrics for each class in this domain
+                class_forgetting = []
+                class_backward = []
+                
+                for class_id in current_acc:
+                    # Find historical accuracies for this domain-class combination
+                    historical_accs = []
+                    for hist_idx, hist_data in enumerate(self.domain_accuracy_history):
+                        if domain_id in hist_data and class_id in hist_data[domain_id]:
+                            historical_accs.append(hist_data[domain_id][class_id])
+                    
+                    if historical_accs:
+                        # Forgetting: max historical accuracy - current accuracy
+                        max_historical = max(historical_accs)
+                        forgetting = max_historical - current_acc[class_id]
+                        class_forgetting.append(forgetting)
+                        
+                        # Backward transfer: current accuracy - first time accuracy
+                        first_acc = historical_accs[0]
+                        backward = current_acc[class_id] - first_acc
+                        class_backward.append(backward)
+                        
+                        print(f"  Class {class_id}:")
+                        print(f"    Current: {current_acc[class_id]:.4f}, Max Historical: {max_historical:.4f}")
+                        print(f"    Forgetting: {forgetting:.4f}, Backward Transfer: {backward:.4f}")
+                
+                # Domain-level averages
+                if class_forgetting:
+                    avg_forgetting = np.mean(class_forgetting)
+                    avg_backward = np.mean(class_backward)
+                    print(f"  Domain {domain_id} Average Forgetting: {avg_forgetting:.4f}")
+                    print(f"  Domain {domain_id} Average Backward Transfer: {avg_backward:.4f}")
         # ------------------------------------------------------------------
         ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
@@ -770,6 +856,7 @@ class Engine():
             print(f"Forgetting: {forgetting:.4f}")
             print(f"Backward Transfer (BWT): {BWT:.4f}")
             print(f"Forward Transfer (FWT): {FWT:.4f}")
+        
 
     def flatten_parameters(self,modules):
         flattened_params = []
