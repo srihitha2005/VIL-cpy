@@ -772,15 +772,19 @@ class Engine():
             total = np.sum(y_true == cls)
             acc = correct / total if total > 0 else 0
             print(f"Class {cls}: {acc:.2%} ({correct}/{total})")
-            
+                    
         print("\n=== DOMAIN-WISE CLASS-WISE ACCURACY ===")
         domain_avg_acc = {}
-    
+        
+        # Initialize variables to accumulate metrics for the mean calculation
+        mean_backward, mean_forgetting, mean_forward = 0, 0, 0
+        seen_domains_count = 0
+        
         for domain_id in sorted(self.current_domain_class_stats.keys()):
             print(f"\nDomain {domain_id}:")
             domain_stats = self.current_domain_class_stats[domain_id]
             total_correct, total_samples = 0, 0
-    
+        
             for class_id in sorted(domain_stats.keys()):
                 correct = domain_stats[class_id]['correct']
                 total = domain_stats[class_id]['total']
@@ -788,31 +792,91 @@ class Engine():
                 total_correct += correct
                 total_samples += total
                 print(f"  Class {class_id}: {acc:.2%} ({correct}/{total})")
-    
+        
             domain_acc = total_correct / total_samples if total_samples > 0 else 0
             domain_avg_acc[domain_id] = domain_acc
             print(f"--> Domain {domain_id} Accuracy: {domain_acc:.2%}")
-    
-            # if first time seeing this domain, save initial acc
+        
+            # If first time seeing this domain, save initial acc and mark it as seen
             if domain_id not in self.domain_initial:
                 self.domain_initial[domain_id] = domain_acc
-    
-            # backward + forgetting
-            if domain_id in self.domain_history:
-                prev_acc = self.domain_history[domain_id]
-                backward = domain_acc - prev_acc
-                forgetting = max(self.domain_best[domain_id] - domain_acc, 0)
-                print(f"    Prev: {prev_acc:.2%} | Backward: {backward:.2%} | Forgetting: {forgetting:.2%}")
-    
-            # forward transfer: compare first-seen (before training) with now
-            fwt = domain_acc - self.domain_initial[domain_id]
-            if domain_id in self.domain_initial:
-                print(f"    Forward: {fwt:.2%}")
-    
-            # update history and best
+            seen_domains_count += 1
+        
+            # Update history and best
+            # Note: `get(domain_id, 0)` is good practice to handle first-time access
             self.domain_history[domain_id] = domain_acc
-            self.domain_best[domain_id] = max(self.domain_best.get(domain_id, 0), domain_acc)        # ------------------------------------------------------------------
-        ## Continual Learning Metrics (Forgetting, Forward, Backward)
+            self.domain_best[domain_id] = max(self.domain_best.get(domain_id, 0), domain_acc)
+        
+        # --- Backward, Forgetting, and Forward Transfer Calculations ---
+        
+        # These calculations must now be done for all previously seen domains, not just the current one.
+        current_step_bwt = []
+        current_step_forgetting = []
+        current_step_fwt = []
+        
+        # Loop through all domains seen so far to calculate metrics
+        for domain_id in self.domain_initial.keys():
+            current_acc = domain_avg_acc.get(domain_id, 0)
+            initial_acc = self.domain_initial[domain_id]
+            best_acc = self.domain_best.get(domain_id, 0)
+        
+            # Backward Transfer: current_acc - initial_acc
+            bwt = current_acc - initial_acc
+            current_step_bwt.append(bwt)
+        
+            # Forgetting: max(best_acc - current_acc, 0)
+            forgetting = max(best_acc - current_acc, 0)
+            current_step_forgetting.append(forgetting)
+        
+            # Forward Transfer: same as BWT but for the current task being learned.
+            # In CL literature, FWT usually refers to the performance on the *newest* task.
+            # We can calculate this only for the latest domain trained.
+            fwt = current_acc - initial_acc
+            current_step_fwt.append(fwt)
+        
+        # Calculate and print mean metrics
+        mean_bwt = sum(current_step_bwt) / len(current_step_bwt) if current_step_bwt else 0
+        mean_forgetting = sum(current_step_forgetting) / len(current_step_forgetting) if current_step_forgetting else 0
+        mean_fwt = sum(current_step_fwt) / len(current_step_fwt) if current_step_fwt else 0
+        
+        print(f"\nMean Backward Transfer: {mean_bwt:.2%}")
+        print(f"Mean Forgetting: {mean_forgetting:.2%}")
+        print(f"Mean Forward Transfer: {mean_fwt:.2%}")
+        
+        
+        # --- Domain-wise Accuracy Matrix ---
+        # Assuming a dictionary to store the matrix: self.accuracy_matrix
+        # self.accuracy_matrix = {domain_id: {task_id: accuracy}}
+        
+        # Update the matrix after each training step
+        # (This part would be in your training loop, not here)
+        # After training on domain J, for each domain i <= J,
+        # self.accuracy_matrix[i][J] = current_acc_on_domain_i
+        
+        # Example of how you would populate the matrix (pseudo-code)
+        # after training on a new task J:
+        # for i in range(J+1):
+        #    accuracy_on_task_i = evaluate_model(test_data_of_task_i)
+        #    self.accuracy_matrix.setdefault(i, {})[J] = accuracy_on_task_i
+        
+        # Print the matrix for visualization
+        print("\n=== DOMAIN-WISE ACCURACY MATRIX ===")
+        if not self.accuracy_matrix:
+            print("Matrix is not populated yet.")
+        else:
+            sorted_domains = sorted(self.accuracy_matrix.keys())
+            # Header row
+            header = " " * 8 + "".join([f"D{d:<6}" for d in sorted_domains])
+            print(header)
+            print("-" * len(header))
+        
+            for i in sorted_domains:
+                row = f"D{i:<6}|"
+                for j in sorted_domains:
+                    # Get accuracy, format to 2 decimal places
+                    acc = self.accuracy_matrix.get(i, {}).get(j, 0.0)
+                    row += f"{acc*100:.1f}% "
+                print(row)        ## Continual Learning Metrics (Forgetting, Forward, Backward)
         # ------------------------------------------------------------------
         if task_id > 0:
             # Get the highest accuracy for each previous task
