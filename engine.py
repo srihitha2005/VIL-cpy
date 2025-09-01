@@ -1189,7 +1189,7 @@ class Engine():
                                             data_loader=data_loader[task_id]['train'], optimizer=optimizer, 
                                             device=device, epoch=epoch, max_norm=args.clip_grad, 
                                             set_training_mode=True, task_id=task_id, class_mask=class_mask, ema_model=ema_model, args=args,)
-                                model = self.pre_train_epoch(model=model, epoch=epoch, task_id=task_id, args=args,)
+                # model = self.pre_train_epoch(model=model, epoch=epoch, task_id=task_id, args=args,)
                 
                 # Training
                 train_stats = self.train_one_epoch(
