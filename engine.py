@@ -9,7 +9,6 @@ import random
 from pathlib import Path 
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import torch.nn as nn
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter
@@ -28,6 +27,44 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from sklearn.metrics import confusion_matrix
+
+#Changed
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import train_test_split
+
+class EarlyStopping:
+    def __init__(self, patience=7, min_delta=0.001, restore_best_weights=True):
+        """
+        Args:
+            patience (int): Number of epochs to wait after last improvement
+            min_delta (float): Minimum change to qualify as an improvement
+            restore_best_weights (bool): Whether to restore model weights from best epoch
+        """
+        self.patience = patience
+        self.min_delta = min_delta
+        self.restore_best_weights = restore_best_weights
+        self.best_accuracy = 0
+        self.counter = 0
+        self.best_weights = None
+        self.early_stop = False
+        
+    def __call__(self, val_accuracy, model):
+        if val_accuracy > self.best_accuracy + self.min_delta:
+            self.best_accuracy = val_accuracy
+            self.counter = 0
+            if self.restore_best_weights:
+                self.best_weights = copy.deepcopy(model.state_dict())
+        else:
+            self.counter += 1
+            
+        if self.counter >= self.patience:
+            self.early_stop = True
+            if self.restore_best_weights and self.best_weights is not None:
+                model.load_state_dict(self.best_weights)
+                print(f"Early stopping triggered. Restored best weights with accuracy: {self.best_accuracy:.4f}")
+            return True
+        return False
+
 
 
 class Engine():
@@ -105,6 +142,132 @@ class Engine():
         self.true_labels = {}
         self.predicted_labels = {}
 
+        #Changed
+        self.early_stopping = EarlyStopping(
+            patience=args.early_stopping_patience if hasattr(args, 'early_stopping_patience') else 9,
+            min_delta=args.early_stopping_min_delta if hasattr(args, 'early_stopping_min_delta') else 0.001
+        )
+
+    #Changed
+    def split_train_val_data(self, dataset, train_ratio=0.8, random_state=42):
+        """
+        Split dataset into train and validation sets
+        
+        Args:
+            dataset: PyTorch dataset
+            train_ratio: Ratio for training data (default 0.8 for 80-20 split)
+            random_state: Random seed for reproducibility
+        
+        Returns:
+            train_dataset, val_dataset: PyTorch Subset objects
+        """
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        
+        # Get labels for stratified split (if your dataset has targets attribute)
+        if hasattr(dataset, 'targets'):
+            labels = dataset.targets
+        elif hasattr(dataset, 'labels'):
+            labels = dataset.labels
+        else:
+            # If no labels available, do random split
+            labels = None
+        
+        if labels is not None:
+            # Stratified split to maintain class distribution
+            train_indices, val_indices = train_test_split(
+                indices, 
+                train_size=train_ratio,
+                random_state=random_state,
+                stratify=labels
+            )
+        else:
+            # Random split
+            train_indices, val_indices = train_test_split(
+                indices,
+                train_size=train_ratio, 
+                random_state=random_state
+            )
+        
+        train_dataset = Subset(dataset, train_indices)
+        val_dataset = Subset(dataset, val_indices)
+        
+        print(f"Split dataset: {len(train_dataset)} train, {len(val_dataset)} validation samples")
+        return train_dataset, val_dataset
+
+    #Changed
+    def create_train_val_loaders(self, dataset, batch_size, train_ratio=0.8, random_state=42, num_workers=4):
+        """
+        Create train and validation data loaders from dataset
+        """
+        train_dataset, val_dataset = self.split_train_val_data(dataset, train_ratio, random_state)
+        
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True
+        )
+        
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True
+        )
+        
+        return train_loader, val_loader
+    
+    def validate_model(self, model, val_loader, criterion, device, class_mask, task_id):
+        """
+        Validate the model on validation set
+        
+        Returns:
+            validation accuracy
+        """
+        model.eval()
+        val_loss = 0
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for input, target in val_loader:
+                input = input.to(device, non_blocking=True)
+                target = target.to(device, non_blocking=True)
+                
+                output = model(input)
+                
+                # Apply same masking logic as in training
+                if output.shape[-1] > self.num_classes:
+                    output, _, _ = self.get_max_label_logits(output, class_mask[task_id], slice=False)
+                    if len(self.added_classes_in_cur_task) > 0:
+                        for added_class in self.added_classes_in_cur_task:
+                            cur_node = np.where(self.labels_in_head == added_class)[0][-1]
+                            output[:, added_class] = output[:, cur_node]
+                    output = output[:, :self.num_classes]
+                
+                if hasattr(self.args, 'train_mask') and self.args.train_mask and class_mask is not None:
+                    mask = class_mask[task_id]
+                    not_mask = np.setdiff1d(np.arange(5), mask)
+                    not_mask_tensor = torch.tensor(not_mask, dtype=torch.int64).to(output.device)
+                    logits = output.index_fill(dim=1, index=not_mask_tensor, value=float('-inf'))
+                else:
+                    logits = output
+                
+                loss = criterion(logits, target)
+                val_loss += loss.item()
+                
+                _, predicted = torch.max(logits.data, 1)
+                total += target.size(0)
+                correct += (predicted == target).sum().item()
+        
+        val_accuracy = 100 * correct / total
+        avg_val_loss = val_loss / len(val_loader)
+        
+        print(f'Validation Loss: {avg_val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%')
+        return val_accuracy
 
     #changed
     @torch.no_grad()
@@ -988,22 +1151,79 @@ class Engine():
             print(f"Classes: {self.class_mask[task_id]}")    
             print()
             print()
-            model, optimizer = self.pre_train_task(model, data_loader[task_id]['train'], device, task_id,args)
+
+            #Changed
+            original_dataset = data_loader[task_id]['train'].dataset
+            train_dataset, val_dataset = self.split_train_val_data(
+                original_dataset, 
+                train_ratio=0.8, 
+                random_state=42
+            )
+
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=data_loader[task_id]['train'].batch_size,
+                shuffle=True,
+                num_workers=data_loader[task_id]['train'].num_workers,
+                pin_memory=True
+            )
+            
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=data_loader[task_id]['train'].batch_size,
+                shuffle=False,
+                num_workers=data_loader[task_id]['train'].num_workers,
+                pin_memory=True
+            )
+
+            model, optimizer = self.pre_train_task(model, train_loader, device, task_id, args)
+            # Changed: Reset early stopping for each task
+            self.early_stopping = EarlyStopping(
+                patience=getattr(args, 'early_stopping_patience', 7),
+                min_delta=getattr(args, 'early_stopping_min_delta', 0.001)
+            )
+
             for epoch in range(args.epochs):
                 model = self.pre_train_epoch(model=model, epoch=epoch, task_id=task_id, args=args,)
                 train_stats = self.train_one_epoch(model=model, criterion=criterion, 
                                             data_loader=data_loader[task_id]['train'], optimizer=optimizer, 
                                             device=device, epoch=epoch, max_norm=args.clip_grad, 
                                             set_training_mode=True, task_id=task_id, class_mask=class_mask, ema_model=ema_model, args=args,)
-              
+                                model = self.pre_train_epoch(model=model, epoch=epoch, task_id=task_id, args=args,)
+                
+                # Training
+                train_stats = self.train_one_epoch(
+                    model=model, criterion=criterion, 
+                    data_loader=train_loader, optimizer=optimizer, 
+                    device=device, epoch=epoch, max_norm=args.clip_grad, 
+                    set_training_mode=True, task_id=task_id, 
+                    class_mask=class_mask, ema_model=ema_model, args=args,
+                )
+                
+                # Validation
+                val_accuracy = self.validate_model(
+                    model, val_loader, criterion, device, class_mask, task_id
+                )
+                
+                # Early stopping check
+                if self.early_stopping(val_accuracy, model):
+                    print(f"Early stopping triggered at epoch {epoch+1}")
+                    break
+
                 if lr_scheduler:
                     lr_scheduler.step(epoch)
                     
             self.post_train_task(model,task_id=task_id)
+            
             if self.args.d_threshold:
                 self.label_train_count[self.current_classes] += 1 
-            test_stats = self.evaluate_till_now(model=model, data_loader=data_loader, device=device, 
-                                        task_id=task_id, class_mask=class_mask, acc_matrix=acc_matrix, ema_model=ema_model, args=args)
+                
+            test_stats = self.evaluate_till_now(
+                model=model, data_loader=data_loader, device=device, 
+                task_id=task_id, class_mask=class_mask, acc_matrix=acc_matrix, 
+                ema_model=ema_model, args=args
+            )
+            
             if args.output_dir and utils.is_main_process():
                 Path(os.path.join(args.output_dir, 'checkpoint')).mkdir(parents=True, exist_ok=True)
                 
